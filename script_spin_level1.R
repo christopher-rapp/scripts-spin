@@ -5,7 +5,7 @@
 #'
 #'
 # ---------------------------------------------------------------------------- #
-##### SCRIPT: Libraries, Functions, Paths #####
+##### SECTION: Libraries, Functions, Paths #####
 #' These are directories that are in use for this code.
 #' If files or scripts are renamed, moved, or changed, the code will NOT work!
 #' Please keep updated for future readers of this code!
