@@ -27,14 +27,21 @@
   library(ggplot2)
   library(patchwork)
 
+  # Plotting parameters
+  resolution.dpi = 400
+  font.family = "Helvetica"
+
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/TAMU Chamber Experiments")
+  setwd("~/Library/CloudStorage/Box-Box/TAMU Purdue Experiments")
   work.dir <- getwd()
+
+  # Instrument time zone
+  tz.c = "US/Eastern"
 
   #' @import
   #' Specify import directory
   import.spin = paste0(work.dir, "/SPIN/export/level1/")
-  import.sems = paste0(work.dir, "/SEMS/export/level0/")
+  import.sems = paste0(work.dir, "/SEMS/export/level1/")
   import.pcu = paste0(work.dir, "/PCU/export/level1/")
 
   #' @export
@@ -42,36 +49,41 @@
   export.data = paste0(work.dir, "/SPIN/export/level2/")
   export.plot = paste0(work.dir, "/SPIN/export/plots/")
 
+  #' @importFrom
   #' Function scripts
-  source("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/scripts/Functions/functions_aerosols.R")
-  source("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/scripts/Functions/functions_microphysics.R")
-  source("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/scripts/Functions/functions_spin_plotting.R")
-  source("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/scripts/Functions/functions_spin_lamina.R")
-  source("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/scripts/Functions/functions_spin_classifier.R")
+  source(paste0("~/Documents/R/functions/", "functions_aerosols.R"))
+  source(paste0("~/Documents/R/functions/", "functions_microphysics.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_plotting.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_lamina.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_classifier.R"))
+}
 
-  # THRESHOLDS USED
+# ---------------------------------------------------------------------------- #
+##### SECTION: Parameter Settings #####
+#'
+
+# THRESHOLDS USED
+{
+  # OPC CORRECTION FACTORS
+  #' Uncertainty in counting ice nucleating particles with continuous flow diffusion chambers
+  #' https://acp.copernicus.org/articles/17/10855/2017/
+  #'
   {
-    # OPC CORRECTION FACTORS
-    #' Uncertainty in counting ice nucleating particles with continuous flow diffusion chambers
-    #' https://acp.copernicus.org/articles/17/10855/2017/
-    #'
-    {
-      CF.min = 1.4
-      CF.max = 9.5
-      CF.mean = 4
+    CF.min = 1.4
+    CF.max = 9.5
+    CF.mean = 4
 
-      # Select which correction factor to use
-      THRESHOLD.CF.nm <- CF.min
-    }
+    # Select which correction factor to use
+    THRESHOLD.CF.nm <- CF.min
+  }
 
-    # ACTIVATION THRESHOLD
-    {
-      THRESHOLD.AF.ALL.nm <- 0
-      THRESHOLD.AF.ORG.nm <- 0.5
-      THRESHOLD.AF.INORG.nm <- 1
+  # ACTIVATION THRESHOLD
+  {
+    THRESHOLD.AF.ALL.nm <- 0
+    THRESHOLD.AF.ORG.nm <- 0.5
+    THRESHOLD.AF.INORG.nm <- 1
 
-      THRESHOLD.AF.nm <- c(THRESHOLD.AF.ALL.nm, THRESHOLD.AF.ORG.nm, THRESHOLD.AF.INORG.nm)
-    }
+    THRESHOLD.AF.nm <- c(THRESHOLD.AF.ALL.nm, THRESHOLD.AF.ORG.nm, THRESHOLD.AF.INORG.nm)
   }
 }
 
@@ -164,7 +176,7 @@
 
           # Read in data
           tmp.df <- fread(x) %>%
-            mutate(`Local Time` = lubridate::force_tz(`Local Time`, tzone = "America/New_York")) %>%
+            mutate(`Local Time` = lubridate::force_tz(`Local Time`, tzone = tz.c)) %>%
             mutate(`UTC Time` = lubridate::force_tz(`UTC Time`, tzone = "UTC"))
 
           return(tmp.df)
@@ -200,7 +212,7 @@
         data.ls <- lapply(files.pcu, function(x){
 
           tmp.df <- fread(x) %>%
-            mutate(`Local Time` = lubridate::force_tz(`Local Time`, tzone = "America/New_York"))
+            mutate(`Local Time` = lubridate::force_tz(`Local Time`, tzone = tz.c))
 
           return(tmp.df)
         })
@@ -212,7 +224,7 @@
         rawPCU.df <- NULL
       }
 
-      # ------------------------------------------------------------------------ #
+      # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Aggregate Data #####
       #'
       {
@@ -230,8 +242,17 @@
           mutate(`Lamina Breaks` = as.factor(`Lamina Breaks`)) %>%
           relocate(all_of(tmp.c), .after = `Depolarization`) %>%
           relocate(c(`Lamina Breaks`, `Depolarization`, `Size Threshold`), .after = `Lamina S Liquid`)
+      }
 
-        rm(rawPCU.df, rawSEMS.df, rawSPIN.df, data.ls)
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Split Data #####
+      #'
+
+      {
+        # Split data based on experiment ramps
+        # Some days have two separate experiments
+        dataSPIN.ls <- dataALL.df %>%
+          dplyr::group_split(., `Experiment Ramp ID`)
       }
     }
 
@@ -239,56 +260,72 @@
     ##### SECTION: Analysis #####
     #'
 
-    {
+    for (i in 1:length(dataSPIN.ls)){
+
+      # Subset data by experiment ramp
+      dataSPIN.df <- dataSPIN.ls[[i]]
+      ID.c <- unique(dataSPIN.df$`Experiment Ramp ID`)
+
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Activation Analysis #####
+      #'
+
+      {
+        print(paste0(date.c, ": Activation Analysis, Experiment ", ID.c))
+
+        # Activation Fraction
+        {
+          # Subtract number density of backgrounds
+          dataSPIN.df <- dataSPIN.df %>%
+            mutate(`Total Particles` = `Total Particles`*THRESHOLD.CF.nm) %>%
+            mutate(`Total Background` = `Total Background`*THRESHOLD.CF.nm)
+
+          if (sum(dataSPIN.df$`Total Background`, na.rm = T) == 0){
+
+            # If there is very limited data for backgrounds apply correction factor
+            dataSPIN.df$`Total Background` <- 1.4
+          }
+
+          dataSPIN.df <- dataSPIN.df %>%
+            mutate(`Total OPC` = `Total Particles` - `Total Background`, .after = `Total Background`) %>%
+            mutate(`Total OPC` = if_else(`Total OPC` > 0, `Total OPC`, 0))
+
+          # Set values when the filter is on to NA
+          # Using NA here as it will artifically lower the actual number due to weighting
+          dataSPIN.df <- dataSPIN.df %>%
+            mutate(`Total OPC` = if_else(`Inlet Filter ON` == 1, NA, `Total OPC`)) %>%
+            mutate(`Activation Fraction (%)` = (`Total OPC`/`Total CN`)*100, .after = `Total OPC`) %>%
+            filter(`Activation Fraction (%)` <= 100) %>%
+            filter(!`Class` == "")
+        }
+
+        # Activation plots
+        {
+          plot.filename = paste0(export.plot, date.c, " Activation Analysis Experiment ", ID.c, ".png")
+          activation.analysis.png(dataSPIN.df, plot.filename)
+        }
+      }
+
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Chamber Analysis #####
+      #' Thermocouple pair by pair comparison of expected lamina conditions
       #
 
-      print(paste0(date.c, ": Activation Analysis"))
-
-      # Activation Fraction
       {
-        # Subtract number density of backgrounds
-        dataALL.df <- dataALL.df %>%
-          mutate(`Total Particles` = `Total Particles`*THRESHOLD.CF.nm) %>%
-          mutate(`Total Background` = `Total Background`*THRESHOLD.CF.nm) %>%
-          mutate(`Total OPC` = `Total Particles` - `Total Background`, .after = `Total Background`) %>%
-          mutate(`Total OPC` = if_else(`Total OPC` > 0, `Total OPC`, 0))
+        print(paste0(date.c, ": Chamber Analysis, Experiment ", ID.c))
 
-        # Set values when the filter is on to NA
-        # Using NA here as it will artifically lower the actual number due to weighting
-        dataALL.df <- dataALL.df %>%
-          mutate(`Total OPC` = if_else(`Inlet Filter ON` == 0, NA, `Total OPC`)) %>%
-          mutate(`Activation Fraction (%)` = (`Total OPC`/`Total CN`)*100, .after = `Total OPC`)
-      }
+        # Smallest diameter that could be a heterogeneous ice nuclei from Vali
+        r_um = 0.1
 
-      # Activation plots
-      {
-        plot.filename = paste0(export.plot, date.c, " Activation Analysis.png")
-        activation.analysis.png(dataALL.df, plot.filename)
-      }
-    }
+        # Run lamina conditions function on the chamber wall thermocouples.
+        # Outputs a list of length 3
+        # List 1 - Lamina S ice
+        # List 2 - Lamina S liquid
+        # List 3 - Homogeneous Freezing Thresholds
+        tmp.ls <- NULL
+        tmp.ls <- lamina.conditions(dataSPIN.df, dataSPIN.df$`Lamina Centerline Ratio`, r_um = r_um, t = 60)
 
-    # ---------------------------------------------------------------------- #
-    ##### SUBSECTION: Chamber Analysis #####
-    #' Thermocouple pair by pair comparison of expected lamina conditions
-    #
-
-    {
-      print(paste0(date.c, ": Chamber Analysis"))
-
-      # Smallest diameter that could be a heterogeneous ice nuclei from Vali
-      r_um = 0.1
-
-      # Run lamina conditions function on the chamber wall thermocouples.
-      # Outputs a list of length 3
-      # List 1 - Lamina S ice
-      # List 2 - Lamina S liquid
-      # List 3 - Homogeneous Freezing Thresholds
-      tmp.ls <- NULL
-      tmp.ls <- lamina.conditions(dataALL.df, dataALL.df$`Lamina Centerline Ratio`, r_um = r_um, t = 60)
-
-      caption1.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
+        caption1.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
                           i.e. C7 & W7. Conditions are generated using a linear interpolation of
                           saturation vapor pressures and temperatures per thermocouple for each
                           experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
@@ -301,21 +338,21 @@
                           threshold as detailed by Koop (2002) for ", r_um ," \U00B5m particles at the
                           linearly interpolated lamina temperature.")
 
-      chamber.contour.png(data = tmp.ls[[1]],
-                          data2 = tmp.ls[[3]],
-                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                          subtitle = paste0("Chamber Ice Saturation: ", date.c),
-                          title.key = latex2exp::TeX(r'($S_{ice}$)', bold = T),
-                          levels.limits = c(1, 2),
-                          col.palette = NULL,
-                          n.colors = 20,
-                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Saturation', '.png'),
-                          plot.width = 12,
-                          plot.height = 6,
-                          plot.resolution.dpi = 600,
-                          caption = caption1.c)
+        chamber.contour.png(data = tmp.ls[[1]],
+                            data2 = tmp.ls[[3]],
+                            title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                            subtitle = paste0("Chamber Ice Saturation: ", date.c),
+                            title.key = latex2exp::TeX(r'($S_{ice}$)', bold = T),
+                            levels.limits = c(1, 2),
+                            col.palette = NULL,
+                            n.colors = 20,
+                            plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Saturation Experiment ', ID.c, '.png'),
+                            plot.width = 12,
+                            plot.height = 6,
+                            plot.resolution.dpi = 600,
+                            caption = caption1.c)
 
-      caption2.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
+        caption2.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
                           i.e. C7 & W7. Conditions are generated using a linear interpolation of
                           saturation vapor pressures and temperatures per thermocouple for each
                           experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
@@ -326,116 +363,117 @@
                           T0, T3, T6, T9, T12 but extended to the entire chamber to locate any
                           inhomogeneities.")
 
-      chamber.contour.png(data = tmp.ls[[2]],
-                          data2 = NULL,
-                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                          subtitle = paste0("Chamber Liquid Saturation: ", date.c),
-                          title.key = latex2exp::TeX(r'($S_{liq}$)', bold = T),
-                          levels.limits = c(0.5, 1.5),
-                          n.colors = 20,
-                          col.palette = NULL,
-                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Liquid Saturation', '.png'),
-                          plot.width = 12,
-                          plot.height = 6,
-                          plot.resolution.dpi = 600,
-                          caption = caption2.c)
+        chamber.contour.png(data = tmp.ls[[2]],
+                            data2 = NULL,
+                            title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                            subtitle = paste0("Chamber Liquid Saturation: ", date.c),
+                            title.key = latex2exp::TeX(r'($S_{liq}$)', bold = T),
+                            levels.limits = c(0.5, 1.5),
+                            n.colors = 20,
+                            col.palette = NULL,
+                            plot.filename = paste0(export.plot.path, date.c, ' Chamber Liquid Saturation Experiment ', ID.c, '.png'),
+                            plot.width = 12,
+                            plot.height = 6,
+                            plot.resolution.dpi = 600,
+                            caption = caption2.c)
 
-      tmp.df <- cbind("UTC Time" = tmp.ls[[1]][, 1], tmp.ls[[1]][, 2:17] - dataALL.df$`Lamina S Ice`)
+        tmp.df <- cbind("UTC Time" = tmp.ls[[1]][, 1], tmp.ls[[1]][, 2:17] - dataSPIN.df$`Lamina S Ice`)
 
-      caption3.c = paste0("Difference between ice supersaturations derived from
+        caption3.c = paste0("Difference between ice supersaturations derived from
                            individually paired cold-warm wall thermocouples
                            and reported SPIN lamina conditions. Lower supersaturation
                            values at the bottom of the chamber e.g. T12 - T15 are due
                            to the droplet evaporation section.")
 
-      chamber.contour.png(data = tmp.df,
-                          data2 = NULL,
-                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                          subtitle = paste0("Chamber Observed Ice Saturation Difference: ", date.c),
-                          title.key = latex2exp::TeX(r'($\Delta S_{ice}$)', bold = T),
-                          levels.limits = c(-0.4, 0.4),
-                          col.palette = c(rev(RColorBrewer::brewer.pal(7, 'Reds')), "white", "white", RColorBrewer::brewer.pal(7, 'Blues')),
-                          n.colors = NULL,
-                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Difference', '.png'),
-                          plot.width = 12,
-                          plot.height = 6,
-                          plot.resolution.dpi = 600,
-                          caption = caption3.c)
+        chamber.contour.png(data = tmp.df,
+                            data2 = NULL,
+                            title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                            subtitle = paste0("Chamber Observed Ice Saturation Difference: ", date.c),
+                            title.key = latex2exp::TeX(r'($\Delta S_{ice}$)', bold = T),
+                            levels.limits = c(-0.4, 0.4),
+                            col.palette = c(rev(RColorBrewer::brewer.pal(7, 'Reds')), "white", "white", RColorBrewer::brewer.pal(7, 'Blues')),
+                            n.colors = NULL,
+                            plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Difference Experiment ', ID.c, '.png'),
+                            plot.width = 12,
+                            plot.height = 6,
+                            plot.resolution.dpi = 600,
+                            caption = caption3.c)
 
-      # ICE
+        # ICE
+        {
+          # Only keep the first 13 thermcouples
+          tmp.df <- tmp.ls[[1]][, c(2:14)]
+
+          # Change names from simple numeric labels
+          setnames(tmp.df, new = paste0("S Ice Pair ", colnames(tmp.df)))
+
+          # Find the maximum S for each row
+          tmp.df$`Maximum S Ice` <- apply(tmp.df, 1, max)
+
+          # Merge
+          dataSPIN.df <- cbind(dataSPIN.df, tmp.df)
+        }
+
+        # LIQUID
+        {
+          # Only keep the first 13 thermcouples
+          tmp.df <- tmp.ls[[2]][, c(2:14)]
+
+          # Change names from simple numeric labels
+          setnames(tmp.df, new = paste0("S Liq Pair ", colnames(tmp.df)))
+
+          # Find the maximum S for each row
+          tmp.df$`Maximum S Liq` <- apply(tmp.df, 1, max)
+
+          # Merge
+          dataSPIN.df <- cbind(dataSPIN.df, tmp.df)
+        }
+      }
+
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Lamina Uncertainty #####
+      #
+
       {
-        # Only keep the first 13 thermcouples
-        tmp.df <- tmp.ls[[1]][, c(2:14)]
+        print(paste0(date.c, ": Lamina Error Analysis, Experiment ", ID.c))
 
-        # Change names from simple numeric labels
-        setnames(tmp.df, new = paste0("S Ice Pair ", colnames(tmp.df)))
+        # Calculate error propagation
+        error.df <- lamina.error(dataSPIN.df, position.error = T)
 
-        # Find the maximum S for each row
-        tmp.df$`Maximum S Ice` <- apply(tmp.df, 1, max)
+        # Add calculated error propagation values
+        dataSPIN.df <- cbind(dataSPIN.df, error.df) %>%
+          relocate(all_of(colnames(error.df)), .after = `Inlet Filter ON`) %>%
+          relocate(c(`Maximum S Ice`, `Maximum S Liq`), .after = `Lamina Temp (C) Error`)
 
-        # Merge
-        dataALL.df <- cbind(dataALL.df, tmp.df)
+        # Remove error points when there is an issue with the warm wall
+        dataSPIN.df <- dataSPIN.df %>%
+          mutate(`Lamina S Ice Error` = if_else(abs(`Cold Wall SP` - `Warm Wall SP`) == 0 | `Inlet Filter ON` == 0, NA, `Lamina S Ice Error`))
+
+        rm(error.df)
       }
 
-      # LIQUID
+      # ---------------------------------------------------------------------- #
+      ##### SECTION: Export Level 2 Data #####
+
       {
-        # Only keep the first 13 thermcouples
-        tmp.df <- tmp.ls[[2]][, c(2:14)]
+        # Check if export path exists
+        # If it does not, create it
+        if (!dir.exists(export.data)) {
+          # Create a dated directory to send plots to
+          dir.create(export.data, mode = "777")
+        }
 
-        # Change names from simple numeric labels
-        setnames(tmp.df, new = paste0("S Liq Pair ", colnames(tmp.df)))
+        export.filename = paste0(export.data, "SPIN001_SPIN_", str_remove_all(date.c, '-'), "_Experiment", ID.c, "_level2.csv")
 
-        # Find the maximum S for each row
-        tmp.df$`Maximum S Liq` <- apply(tmp.df, 1, max)
+        print(paste0("Exporting Level 2 Data: ", export.filename))
 
-        # Merge
-        dataALL.df <- cbind(dataALL.df, tmp.df)
-      }
-    }
-
-    # ------------------------------------------------------------------------ #
-    ##### SUBSECTION: Lamina Uncertainty #####
-    #
-
-    {
-      print(paste0(date.c, ": Lamina Error Analysis"))
-
-      # Calculate error propagation
-      error.df <- lamina.error(dataALL.df, position.error = T)
-
-      # Add calculated error propagation values
-      dataALL.df <- cbind(dataALL.df, error.df) %>%
-        relocate(all_of(colnames(error.df)), .after = `Inlet Filter ON`) %>%
-        relocate(c(`Maximum S Ice`, `Maximum S Liq`), .after = `Lamina Temp (C) Error`)
-
-      # Remove error points when there is an issue with the warm wall
-      dataALL.df <- dataALL.df %>%
-        mutate(`Lamina S Ice Error` = if_else(abs(`Cold Wall SP` - `Warm Wall SP`) == 0 | `Inlet Filter ON` == 0, NA, `Lamina S Ice Error`))
-
-      rm(error.df)
-    }
-
-    # ------------------------------------------------------------------------ #
-    ##### SECTION: Export Level 2 Data #####
-
-    {
-      # Check if export path exists
-      # If it does not, create it
-      if (!dir.exists(export.data)) {
-        # Create a dated directory to send plots to
-        dir.create(export.data, mode = "777")
+        # Save data using data.table::fwrite
+        data.table::fwrite(dataSPIN.df, file = export.filename, showProgress = T)
       }
 
-      export.filename = paste0(export.data, "SPIN001_SPIN_", str_remove_all(date.c, '-'), "_level2.csv")
-
-      print(paste0("Exporting Level 2 Data: ", export.filename))
-
-      # Save data using data.table::fwrite
-      data.table::fwrite(dataALL.df, file = export.filename, showProgress = T)
+      # Export data to a temporary list for optional plotting later
+      data.export.ls[[n]] <- dataSPIN.ls
     }
-
-    # Export data to a temporary list for optional plotting later
-    data.export.ls[[n]] <- dataALL.df
   }
 
   # Backup data from current run for testing
@@ -448,7 +486,7 @@
 
   {
     # Read in data that has been saved to a list temporarily
-    data.export.ls <- readRDS("~/Library/CloudStorage/Box-Box/Organosulfate Proxies/SPIN/export/level2/TMP.RDS")
+    data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
 
     summary.ls <- lapply(data.export.ls, function(x){
 

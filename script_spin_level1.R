@@ -30,9 +30,16 @@
   library(viridis)
   library(RColorBrewer)
 
+  # Plotting parameters
+  resolution.dpi = 400
+  font.family = "Helvetica"
+
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/TAMU Chamber Experiments")
+  setwd("~/Library/CloudStorage/Box-Box/TAMU Purdue Experiments")
   work.dir <- getwd()
+
+  # Instrument time zone
+  tz.c = "US/Eastern"
 
   #' @import
   #' Specify import directory
@@ -43,11 +50,12 @@
   export.data = paste0(work.dir, "/SPIN/export/level1/")
   export.plot = paste0(work.dir, "/SPIN/export/plots/")
 
+  #' @importFrom
   #' Function scripts
-  source(paste0(work.dir, "/scripts/Functions/", "functions_microphysics.R"))
-  source(paste0(work.dir, "/scripts/Functions/", "functions_spin_plotting.R"))
-  source(paste0(work.dir, "/scripts/Functions/", "functions_spin_lamina.R"))
-  source(paste0(work.dir, "/scripts/Functions/", "functions_spin_classifier.R"))
+  source(paste0("~/Documents/R/functions/", "functions_microphysics.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_plotting.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_lamina.R"))
+  source(paste0("~/Documents/R/functions/", "functions_spin_classifier.R"))
 }
 
 # ---------------------------------------------------------------------------- #
@@ -79,10 +87,16 @@
   THRESHOLD.Dp.nm = 2.5
   {
     data.export.ls <- NULL
-    for (n in 9:10){
+    for (n in 1:length(spin.dates)){
 
       {
-        print(paste0(spin.dates[n], ": Starting Aggregation"))
+        print(paste0("Level 1 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
+
+        # Memory management
+        gc(verbose = F)
+
+        # Code Timing
+        pct <- proc.time()
 
         if (spin.dates[n] == "2024-01-24"){
           next
@@ -96,7 +110,9 @@
           pattern = '*.csv'
         )
 
-        gc(verbose = F)
+        if (length(files.spin) != 3){
+          next
+        }
 
         # -------------------------------------------------------------------- #
         ##### SUBSECTION: SPIN Data #####
@@ -123,7 +139,7 @@
 
             # Formatting time strings
             dataLOG.df <- dataLOG.df %>%
-              mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = "US/Central"))
+              mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
 
             # Retrieve experiment start time from LOG file
             sequence.ramps.tm = dataLOG.df$`UTC Time`[str_which(dataLOG.df$Message, "Starting Sequence Update SPs from Ramp.")]
@@ -184,7 +200,7 @@
               # Set total backgrounds to NA for when the inlet filter is on
               # Using 0 will sway statistics significantly
               tmp.df <- tmp.df %>%
-                mutate(`Total Background` = if_else(`Inlet Filter ON` == 0, `Total Particles`, NA), .after = `Total Particles`)
+                mutate(`Total Background` = if_else(`Inlet Filter ON` == 1, `Total Particles`, NA), .after = `Total Particles`)
 
               # Using a linear interpolation to fill in the time series than averaging gives a higher background ice concentration
               # This gives a more conservative approach in declaring ice counts
@@ -273,6 +289,7 @@
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Aggregate Data #####
+
           {
             # Time stamps need to be averaged to the nearest hundreth second to merge properly
             dataSPIN.df$`Time (sec)` <- round(dataSPIN.df$`Time (sec)`, 1)
@@ -310,6 +327,28 @@
             # Clean up memory
             rm(dataBINS.df, rawPBP.df, rawSPIN.df)
             gc(verbose = F)
+          }
+
+          # ------------------------------------------------------------------ #
+          ##### SUBSECTION: Filtering Data #####
+
+          {
+            # Standard error removal of irregular flows
+            # This can happen during an experiment where flow upstream was plugged
+            # Only applied if there are multiple large shifts in flow to prevent unncessarily applying a filter to good data
+            flows.nm <- abs(diff(dataALL.df$`Total Flow (LPM)`))
+
+            if (length(which(flows.nm > 1)) > 3){
+
+              # Outlier detection
+              threshold.lower.nm = quantile(dataALL.df$`Total Flow (LPM)`, probs = c(0.25)) - 1.5*IQR(dataALL.df$`Total Flow (LPM)`)
+              threshold.upper.nm = quantile(dataALL.df$`Total Flow (LPM)`, probs = c(0.75)) + 1.5*IQR(dataALL.df$`Total Flow (LPM)`)
+
+              # Remove data outside the outliers
+              dataALL.df <- dataALL.df %>%
+                filter(`Total Flow (LPM)` >= threshold.lower.nm) %>%
+                filter(`Total Flow (LPM)` <= threshold.upper.nm)
+            }
           }
 
           # ------------------------------------------------------------------ #
@@ -434,8 +473,8 @@
             panel.border = element_rect(colour = "black", fill = NA),
             axis.title.x = element_text(vjust = -1.5),
             axis.title.y = element_text(vjust = 2),
-            axis.ticks.x = element_line(size = 0.5),
-            axis.ticks.y = element_line(size = 0.5),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
             plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
             panel.spacing = unit(2, "lines")
@@ -458,8 +497,8 @@
             panel.border = element_rect(colour = "black", fill = NA),
             axis.title.x = element_text(vjust = -1.5),
             axis.title.y = element_text(vjust = 2),
-            axis.ticks.x = element_line(size = 0.5),
-            axis.ticks.y = element_line(size = 0.5),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
             plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
             panel.spacing = unit(2, "lines")

@@ -14,6 +14,7 @@
 {
   # Clears global environment and all saved variables
   rm(list = ls())
+  gc(verbose = F)
 
   # Data wrangling libraries
   library(data.table)
@@ -70,7 +71,7 @@
   # Pull POSIX style dates from directory names
   spin.dates <- as.Date(spin.dirs, format = '%Y%m%d')
 
-  for (n in 10:length(spin.dates)){
+  for (n in 1:length(spin.dates)){
 
     {
       print(paste0("Level 0 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
@@ -1269,15 +1270,18 @@
           dataSPIN.df <- dataSPIN.df %>%
             mutate(`Experiment Ramp ID` = tmp.index, .after = `Duration (s)`)
 
+        } else if (ramps.n == 1){
+
+          # If only one
+          dataSPIN.df <- dataSPIN.df %>%
+            mutate(`Experiment Ramp ID` = 1, .after = `Duration (s)`)
         } else {
 
           # If no experimental ramp started just list 0
           dataSPIN.df <- dataSPIN.df %>%
-            mutate(`Experiment Ramp ID` = "0", .after = `Duration (s)`)
+            mutate(`Experiment Ramp ID` = 0, .after = `Duration (s)`)
         }
       }
-
-
 
       # ---------------------------------------------------------------------- #
       ##### PLOTTING: Particle Size Spectrometer Time Series #####
