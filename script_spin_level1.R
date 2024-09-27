@@ -168,7 +168,9 @@
 
             # Filter data after an experimental ramp has started
             dataSPIN.df <- rawSPIN.df %>%
-              filter(`UTC Time` >= sequence.ramps.tm[1])
+              filter(`UTC Time` >= sequence.ramps.tm[1]) %>%
+              mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c)) %>%
+              mutate(`Start Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
           }
 
           # ------------------------------------------------------------------ #
@@ -312,8 +314,9 @@
             # Normalize values to be between 0 and 1 for standardization
             dataALL.df <- dataALL.df %>%
               mutate(`Depolarization` = `S1`/(`P1` + `P2`)) %>%
-              mutate(`Depolarization` = if_else(Depolarization < 1, Depolarization, NA)) %>%
-              mutate(`Depolarization` = if_else(Depolarization > 0, Depolarization, NA))
+              mutate(`Depolarization` = if_else(Depolarization > 1, NA, Depolarization)) %>%
+              mutate(`Depolarization` = if_else(Depolarization < 0, NA, Depolarization)) %>%
+              filter(!is.na(`Depolarization`))
 
             # Order columns
             dataALL.df <- dataALL.df %>%
@@ -357,10 +360,14 @@
           {
             print(paste0(date.c, ": Classification"))
 
+            # Classifier
+            class.df <- spin.classifier(dataALL.df, ML.option = F, size.limit = THRESHOLD.Dp.nm)
+            tmp.c <- colnames(class.df)
+
             # apply classifier function
-            export.df <- dataALL.df %>%
-              mutate(`Class` = spin.classifier(., ML.option = F, size.limit = THRESHOLD.Dp.nm), .before = `Lamina S Ice`) %>%
-              mutate(`Size Threshold` = THRESHOLD.Dp.nm)
+            export.df <- cbind(dataALL.df, class.df) %>%
+              select(all_of(tmp.c), .after = "Depolarization")
+
           }
         }
       }
@@ -432,14 +439,16 @@
       # Retrieve data from the list
       dataSPIN.df <- data.export.ls[[n]]
 
-      # Experiment ID
-      ID <- unique(dataSPIN.df$`Experiment Ramp ID`)
-
       # Date string for plotting later
       date.c <- unique(lubridate::as_date(dataSPIN.df$`UTC Time`))[1]
 
+      # Experiment ID
+      ID <- unique(dataSPIN.df$`Experiment Ramp ID`)
+
       bins.ix <- suppressWarnings(which(!is.na(as.numeric(colnames(dataSPIN.df)))))
       bins.nm <- colnames(dataSPIN.df)[bins.ix]
+
+      dataSPIN.df$P1[which(is.na(dataSPIN.df$Class))]
 
       # Plot path
       export.plot.path = paste0(export.plot, str_remove_all(date.c, '-'), "/")
@@ -454,14 +463,17 @@
         title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
         title.sub <- paste0("Classified: ", date.c, ", Experiment ", ID)
 
+        # Colorblind accessible color palette
+        cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
         plot.filename <- paste0(export.plot.path, date.c, " Classification", " Experiment ", ID, ".png")
 
-        # Plot how the classification looks
-        gg1 <- ggplot(dataSPIN.df, aes(x = `Log Size`, y = `Depolarization`, color = `Class`)) +
+        gg1 <- ggplot(dataSPIN.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
-          scale_x_continuous(limits = c(1, 5), expand = c(0, 0)) +
+          scale_x_continuous(limits = c(1, 1.7)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
-          labs(title = title.main, subtitle = title.sub) +
+          xlab(latex2exp::TeX(r'(Lamina $S_{ice}$)')) +
+          scale_color_manual(values = cbPalette) +
           facet_wrap(~`Lamina Breaks`) +
           theme(
             plot.title = element_text(),
@@ -481,12 +493,13 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        gg2 <- ggplot(dataSPIN.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Class`)) +
+        gg2 <- ggplot(dataSPIN.df, aes(x = `Log Size`, y = `Depolarization`, color = `Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
-          scale_x_continuous(limits = c(1, 1.7)) +
+          scale_x_continuous(limits = c(1, 5), expand = c(0, 0)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
-          xlab(latex2exp::TeX(r'(Lamina $S_{ice}$)')) +
+          labs(title = title.main, subtitle = title.sub) +
           facet_wrap(~`Lamina Breaks`) +
+          scale_color_manual(values = cbPalette) +
           theme(
             plot.title = element_text(),
             plot.subtitle = element_text(color = "gray25"),
@@ -516,6 +529,62 @@
           units = "in",
           bg = "#ffffff"
         )
+      }
+
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Light Scattering  #####
+      #'
+
+      {
+        tmp.df <- dataSPIN.df %>%
+          filter(`Inlet Filter ON` == 0)
+
+        gg1 <- ggplot(tmp.df, aes(y = `Depolarization`, x = after_stat((count/sum(count))), fill = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
+          geom_density(alpha = 0.5) +
+          scale_x_continuous(expand = c(0.001, 0.001)) +
+          scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
+          ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
+          xlab(label = "Percentage Counts") +
+          scale_fill_manual(values = cbPalette) +
+          theme(panel.background = element_rect(fill = "white"),
+                plot.background = element_rect(fill = "white"),
+                panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+                panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+                panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+                axis.title.x = element_text(vjust = -1),
+                axis.title.y = element_text(vjust = 4),
+                axis.ticks.length = unit(2, "mm"),
+                axis.minor.ticks.length = unit(1, "mm"),
+                legend.title = element_blank(),
+                panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+
+        gg2 <- ggplot(tmp.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Lamina Breaks`)) +
+          geom_point(size = 0.01, alpha = 0.1) +
+          geom_smooth(alpha = 0.5) +
+          scale_x_continuous(breaks = seq(1, 1.6, 0.1), limits = c(1, 1.6), expand = c(0.001, 0.001)) +
+          scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
+          xlab(label = latex2exp::TeX(r'($S_{ice}$)')) +
+          scale_color_manual(values = cbPalette) +
+          theme(panel.background = element_rect(fill = "white"),
+                plot.background = element_rect(fill = "white"),
+                panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+                panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+                panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+                axis.title.x = element_text(vjust = -2),
+                axis.title.y = element_blank(),
+                axis.ticks.length = unit(2, "mm"),
+                axis.minor.ticks.length = unit(1, "mm"),
+                panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) +
+          guides(color = FALSE)
+
+        combined <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
+          (gg2 & theme(plot.tag.position  = c(.785, .96))) +
+          plot_annotation(tag_levels = "a") +
+          plot_layout(guides = "collect") & theme(legend.position = "right")
+
+        plot.filename = paste0(export.plot, "Light.png")
+
+        ggsave(plot.filename, combined, width = 10, height = 6)
       }
 
       # ------------------------------------------------------------------------ #

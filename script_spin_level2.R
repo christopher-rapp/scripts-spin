@@ -87,6 +87,18 @@
   }
 }
 
+# ------------------------------------------------------------------ #
+##### SUBSECTION: Classification #####
+
+{
+  print(paste0(date.c, ": Classification"))
+
+  # apply classifier function
+  export.df <- dataALL.df %>%
+    mutate(`Class` = spin.classifier(., ML.option = F, size.limit = THRESHOLD.Dp.nm), .before = `Lamina S Ice`) %>%
+    mutate(`Size Threshold` = THRESHOLD.Dp.nm)
+}
+
 # ---------------------------------------------------------------------------- #
 ##### SECTION: File Selection #####
 #'
@@ -266,6 +278,8 @@
       dataSPIN.df <- dataSPIN.ls[[i]]
       ID.c <- unique(dataSPIN.df$`Experiment Ramp ID`)
 
+      if (nrow(dataSPIN.df) <= )
+
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Activation Analysis #####
       #'
@@ -306,6 +320,9 @@
         }
       }
 
+    }
+  }
+}
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Chamber Analysis #####
       #' Thermocouple pair by pair comparison of expected lamina conditions
