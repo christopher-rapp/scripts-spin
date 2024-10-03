@@ -43,6 +43,7 @@
   import.spin = paste0(work.dir, "/SPIN/export/level1/")
   import.sems = paste0(work.dir, "/SEMS/export/level1/")
   import.pcu = paste0(work.dir, "/PCU/export/level1/")
+  import.exp = paste0(work.dir, "/README_Compounds.xlsx")
 
   #' @export
   #' Specify where to send plots and text files
@@ -87,18 +88,6 @@
   }
 }
 
-# ------------------------------------------------------------------ #
-##### SUBSECTION: Classification #####
-
-{
-  print(paste0(date.c, ": Classification"))
-
-  # apply classifier function
-  export.df <- dataALL.df %>%
-    mutate(`Class` = spin.classifier(., ML.option = F, size.limit = THRESHOLD.Dp.nm), .before = `Lamina S Ice`) %>%
-    mutate(`Size Threshold` = THRESHOLD.Dp.nm)
-}
-
 # ---------------------------------------------------------------------------- #
 ##### SECTION: File Selection #####
 #'
@@ -141,6 +130,16 @@
 }
 
 # ---------------------------------------------------------------------------- #
+##### SECTION: Experiment List #####
+#'
+
+{
+  # This may change depending on your study
+  # Compounds, products, combinations, etc are just labeled variable for simplicity
+  dataEXP.df <- readxl::read_excel(import.exp)
+}
+
+# ---------------------------------------------------------------------------- #
 ##### SECTION: Level 2 #####
 #'
 
@@ -175,6 +174,11 @@
         # Loop through SPIN files and read in
         # SPIN is exported using f.write which preserves time zone in the file
         rawSPIN.df <- fread(files.spin)
+
+        # Filter data after an experimental ramp has started
+        rawSPIN.df <- rawSPIN.df %>%
+          mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c)) %>%
+          mutate(`Start Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
       }
 
       # ------------------------------------------------------------------------ #
@@ -249,16 +253,27 @@
           dataALL.df <- left_join(dataALL.df, rawPCU.df, by = "UTC Time")
         }
 
+        tmp <- which(unique(as.Date(dataALL.df$`UTC Time`)) == dataEXP.df$Date)
+        tmp.df <- dataEXP.df[tmp, ]
+
         # Set lamina breaks to a factor
         dataALL.df <- dataALL.df %>%
           mutate(`Lamina Breaks` = as.factor(`Lamina Breaks`)) %>%
           relocate(all_of(tmp.c), .after = `Depolarization`) %>%
-          relocate(c(`Lamina Breaks`, `Depolarization`, `Size Threshold`), .after = `Lamina S Liquid`)
+          relocate(c(`Lamina Breaks`, `Depolarization`, `Size Threshold`), .after = `Lamina S Liquid`) %>%
+          mutate(`Variable 1` = as.character(tmp.df[, 2]), .after = `Experiment Ramp ID`) %>%
+          mutate(`Variable 2` = as.character(tmp.df[, 3]), .after = `Variable 1`)
       }
 
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Split Data #####
       #'
+
+      if (!all(which(rle(dataALL.df$`Experiment Ramp ID`)$lengths > 5*3600))){
+
+        dataALL.df$`Experiment Ramp ID` <- median(dataALL.df$`Experiment Ramp ID`)
+
+      }
 
       {
         # Split data based on experiment ramps
@@ -276,9 +291,8 @@
 
       # Subset data by experiment ramp
       dataSPIN.df <- dataSPIN.ls[[i]]
-      ID.c <- unique(dataSPIN.df$`Experiment Ramp ID`)
 
-      if (nrow(dataSPIN.df) <= )
+      ID.c <- unique(dataSPIN.df$`Experiment Ramp ID`)
 
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Activation Analysis #####
@@ -308,9 +322,13 @@
           # Using NA here as it will artifically lower the actual number due to weighting
           dataSPIN.df <- dataSPIN.df %>%
             mutate(`Total OPC` = if_else(`Inlet Filter ON` == 1, NA, `Total OPC`)) %>%
-            mutate(`Activation Fraction (%)` = (`Total OPC`/`Total CN`)*100, .after = `Total OPC`) %>%
+            mutate(`Activation Fraction (%)` = (`Total OPC`/`Total CN`)*100, .before = `Depolarization`) %>%
             filter(`Activation Fraction (%)` <= 100) %>%
             filter(!`Class` == "")
+        }
+
+        if (nrow(dataSPIN.df) < 1200){
+          next
         }
 
         # Activation plots
@@ -320,9 +338,6 @@
         }
       }
 
-    }
-  }
-}
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Chamber Analysis #####
       #' Thermocouple pair by pair comparison of expected lamina conditions
@@ -497,247 +512,178 @@
   saveRDS(data.export.ls, file = paste0(export.data, "TMP.RDS"))
 }
 
-  # -------------------------------------------------------------------------- #
-  ##### SECTION: Statistics #####
-  #'
+# -------------------------------------------------------------------------- #
+##### SECTION: Statistics #####
+#'
 
-  {
-    # Read in data that has been saved to a list temporarily
-    data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
+{
+  # Read back in looped data from above and filter empty data
+  data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
+  data.export.ls <- data.export.ls[which(lengths(data.export.ls) != 0)]
+  data.export.ls <- purrr::flatten(data.export.ls)
 
-    summary.ls <- lapply(data.export.ls, function(x){
+  summary.ls <- lapply(data.export.ls, function(x){
+
+    if (any(str_detect(colnames(x), "PCU") & str_detect(colnames(x), "Activation"))){
 
       print(unique(as.Date(x$`UTC Time`)))
 
-      if (any(str_detect(colnames(x), "PCU"))){
+      activated.df <- x %>%
+        filter(`Class` == "Ice" | `Class` == "Droplet") %>%
+        filter(`Activation Fraction (%)` >= THRESHOLD.AF.nm[2]) %>%
+        mutate(`Activation Threshold (%)` = THRESHOLD.AF.nm[2])
 
-        activated.df <- x %>%
-          filter(`Class` == "Ice" | `Class` == "Droplet") %>%
-          filter(`Activation Fraction (%)` >= THRESHOLD.AF.nm[2]) %>%
-          mutate(`Activation Threshold (%)` = THRESHOLD.AF.nm[2])
+      if (nrow(activated.df) != 0){
 
-        if (nrow(activated.df) != 0){
+        # Run statistics of ice activation
+        activated.df <- activated.df %>%
+          group_by(`Class`, `Lamina Breaks`) %>%
+          arrange(., `Lamina S Ice`) %>%
+          reframe(`Date` = unique(as.Date(`UTC Time`)),
+                  `Class` = unique(`Class`),
+                  `Size Threshold` = unique(`Size Threshold`),
+                  `Maximum Activation (%)` = max(`Activation Fraction (%)`, na.rm = T),
+                  `Onset RH` = first(`Lamina S Ice`),
+                  `Onset RH Error` = first(`Lamina S Ice Error`),
+                  `Onset Temperature` = first(`Lamina Temp (C)`),
+                  `Onset Temperature Error` = first(`Lamina Temp (C) Error`),
+                  `Dpg (um)` = mean(`Dpg`, na.rm = T),
+                  `Geometric Standard Deviation` = mean(`GSD`, na.rm = T),
+                  `CPC` = mean(`Total CN`, na.rm = T),
+                  `PCU Lamina` = mean(`TC1`, na.rm = T),
+                  `PCU Lamina Error` = max(`PCU Lamina Error`, na.rm = T),
+                  `PCU RH` = mean(`RH2`, na.rm = T),
+                  `PCU RH Error` = max(`RH2 Error`, na.rm = T),
+                  `Inlet RH` = mean(`RH1`, na.rm = T),
+                  `Inlet RH Error` = max(`RH1 Error`, na.rm = T))
 
-          # Run statistics of ice activation
-          activated.df <- activated.df %>%
-            group_by(`Class`, `Lamina Breaks`) %>%
-            arrange(., `Lamina S Ice`) %>%
-            reframe(`Date` = unique(as.Date(`UTC Time`)),
-                    `Class` = unique(`Class`),
-                    `Size Threshold` = unique(`Size Threshold`),
-                    `Maximum Activation (%)` = max(`Activation Fraction (%)`, na.rm = T),
-                    `Onset RH` = first(`Lamina S Ice`),
-                    `Onset RH Error` = first(`Lamina S Ice Error`),
-                    `Onset Temperature` = first(`Lamina Temp (C)`),
-                    `Onset Temperature Error` = first(`Lamina Temp (C) Error`),
-                    `Dpg (um)` = mean(`Dpg`, na.rm = T),
-                    `Geometric Standard Deviation` = mean(`GSD`, na.rm = T),
-                    `CPC` = mean(`Total CN`, na.rm = T),
-                    `PCU Lamina` = mean(`TC1`, na.rm = T),
-                    `PCU Lamina Error` = max(`PCU Lamina Error`, na.rm = T),
-                    `PCU RH` = mean(`RH2`, na.rm = T),
-                    `PCU RH Error` = max(`RH2 Error`, na.rm = T),
-                    `Inlet RH` = mean(`RH1`, na.rm = T),
-                    `Inlet RH Error` = max(`RH1 Error`, na.rm = T))
+        unactivated.df <- NULL
 
-          unactivated.df <- NULL
-
-        } else {
-
-          activated.df <- NULL
-
-          unactivated.df <- x %>%
-            group_by(`Lamina Breaks`) %>%
-            reframe(`Date` = unique(as.Date(`UTC Time`)),
-                    `Class` = NA,
-                    `Size Threshold` = unique(`Size Threshold`),
-                    `Maximum Activation (%)` = max(`Activation Fraction (%)`, na.rm = T),
-                    `Onset RH` = NA,
-                    `Onset RH Error` = NA,
-                    `Onset Temperature` = NA,
-                    `Onset Temperature Error` = NA,
-                    `Dpg (um)` = mean(`Dpg`, na.rm = T),
-                    `Geometric Standard Deviation` = mean(`GSD`, na.rm = T),
-                    `CPC` = mean(`Total CN`, na.rm = T),
-                    `PCU Lamina` = mean(`TC1`, na.rm = T),
-                    `PCU Lamina Error` = max(`PCU Lamina Error`, na.rm = T),
-                    `PCU RH` = mean(`RH2`, na.rm = T),
-                    `PCU RH Error` = max(`RH2 Error`, na.rm = T),
-                    `Inlet RH` = mean(`RH1`, na.rm = T),
-                    `Inlet RH Error` = max(`RH1 Error`, na.rm = T))
-        }
-
-        export.df <- rbind(activated.df, unactivated.df)
-      }
-    })
-
-    export.df <- rbindlist(summary.ls, use.names = T, fill = T)
-
-    write.csv(export.df, file = paste0(export.data, "summary_level2.csv"))
-  }
-
-  # -------------------------------------------------------------------------- #
-  ##### SECTION: Merge Literature and Experiment List #####
-  #'
-
-  {
-    compounds.df <- readxl::read_xlsx('~/Library/CloudStorage/Box-Box/Organosulfate Proxies/README_Compounds.xlsx', na = "NA")
-    literature.df <- readxl::read_xlsx('~/Library/CloudStorage/Box-Box/Organosulfate Proxies/README_Literature.xlsx', na = "NA")
-
-    data.df <- right_join(export.df, compounds.df, by = "Date") %>%
-      select(`Date`, `Compound`, `Tg,Dry (K)`, `Heating Temperature`, everything()) %>%
-      arrange(`Date`) %>%
-      filter(!is.na(`Lamina Breaks`))
-
-    data.df[sapply(data.df, is.infinite)] <- NA
-    data.df[sapply(data.df, is.nan)] <- NA
-
-    for (i in 1:nrow(data.df)){
-
-      if (!is.na(data.df$`Tg,Dry (K)`[i]) & !is.na(data.df$`PCU RH`[i])){
-
-        tmp <- Tg.calc(data.df$`Dpg (um)`[i]*1000, data.df$`PCU RH`[i], k = data.df$Kappa[i], kGT = 2.5, TgDry = data.df$`Tg,Dry (K)`[i], Error = data.df$Error[i])
-
-        data.df$Tg[i] = tmp[1]
-        data.df$TgError[i] = tmp[2]
       } else {
-        data.df$Tg[i] = NA
-        data.df$TgError[i] = NA
+
+        activated.df <- NULL
+
+        unactivated.df <- x %>%
+          group_by(`Lamina Breaks`) %>%
+          reframe(`Date` = unique(as.Date(`UTC Time`)),
+                  `Class` = NA,
+                  `Size Threshold` = unique(`Size Threshold`),
+                  `Maximum Activation (%)` = max(`Activation Fraction (%)`, na.rm = T),
+                  `Onset RH` = NA,
+                  `Onset RH Error` = NA,
+                  `Onset Temperature` = NA,
+                  `Onset Temperature Error` = NA,
+                  `Dpg (um)` = mean(`Dpg`, na.rm = T),
+                  `Geometric Standard Deviation` = mean(`GSD`, na.rm = T),
+                  `CPC` = mean(`Total CN`, na.rm = T),
+                  `PCU Lamina` = mean(`TC1`, na.rm = T),
+                  `PCU Lamina Error` = max(`PCU Lamina Error`, na.rm = T),
+                  `PCU RH` = mean(`RH2`, na.rm = T),
+                  `PCU RH Error` = max(`RH2 Error`, na.rm = T),
+                  `Inlet RH` = mean(`RH1`, na.rm = T),
+                  `Inlet RH Error` = max(`RH1 Error`, na.rm = T))
       }
+
+      export.df <- rbind(activated.df, unactivated.df)
     }
+  })
 
-    data.df <- data.df %>%
-      select(`Date`, `Compound`, `Tg,Dry (K)`, `Error`, `Tg`, `TgError`, `Heating Temperature`, everything())
+  export.df <- rbindlist(summary.ls, use.names = T, fill = T)
 
-    other.df <- data.df %>%
-      filter(`Class` == "Droplet" | is.na(`Class`)) %>%
-      mutate(`Phase` = "Liquid")
-
-    data.df <- data.df %>%
-      filter(`Class` == "Ice") %>%
-      mutate(`Phase` = "Glassy")
-
-    data.df <- rbind(data.df, literature.df, use.names = T, fill = T)
-
-    data.df <- data.df %>%
-      mutate(`Phase` = if_else(is.na(`Phase`), "Glassy", `Phase`)) %>%
-      mutate(`Class` = if_else(is.na(`Class`), "Ice", `Class`))
-
-    data.df <- rbind(data.df, other.df, fill = T) %>%
-      filter(!str_detect(`Compound`, "ammonium")) %>%
-      mutate(`Class` = factor(`Class`, levels = c("Ice", "Droplet"))) %>%
-      mutate(`Phase` = factor(`Phase`, levels = c("Liquid", "Glassy")))
-
-    data.df <- data.df %>%
-      mutate(`Label` = if_else(is.na(`Source`), `Compound`, paste0(`Compound`, " (", `Source`, ")")))
-
-    # This removes any of the data points from the table that correspond to literature
-    export.df <- data.df %>%
-      filter(!is.na(`Date`)) %>%
-      arrange(`Class`, `Compound`) %>%
-      mutate(`Generation Method` = if_else(!is.na(`Heating Temperature`), paste0(`Heating Temperature`, " (°C), ", Flowrate, " L min-1"), "Atomizer")) %>%
-      mutate(`Tg,Dry (°C)` = paste0(round(`Tg,Dry (K)` - 273.15, 0), " ± ", `Error`), ) %>%
-      mutate(`Tg (°C)` = paste0(round(`Tg` - 273.15, 0), " ± ", round(`TgError`, 0))) %>%
-      mutate(across(`Onset RH`:`Onset Temperature Error`, \(x) round(x, 2))) %>%
-      mutate(`Onset Sice` = paste0(`Onset RH`, " ± ", `Onset RH Error`)) %>%
-      mutate(`Onset T (°C)` = paste0(`Onset Temperature`, " ± ", `Onset Temperature Error`)) %>%
-      mutate(`PCU T (°C)` = paste0(round(`PCU Lamina`, 2), " ± ", round(`PCU Lamina Error`, 2))) %>%
-      mutate(`PCU RH (%)` = paste0(round(`PCU RH`, 0), " ± ", round(`PCU RH Error`, 1))) %>%
-      mutate(`PCU Inlet RH (%)` = paste0(round(`Inlet RH`, 0), " ± ", round(`Inlet RH Error`, 1))) %>%
-      mutate(`Dpg (um)` = round(`Dpg (um)`, 3)) %>%
-      mutate(`σg` = round(`Geometric Standard Deviation`, 2)) %>%
-      mutate(`CPC (n cm^-3)` = round(CPC, 0)) %>%
-      relocate(`Generation Method`, .after = `Compound`) %>%
-      select(c(`Date`, Compound, `Generation Method`, `Tg,Dry (°C)`, `Tg (°C)`,
-               `PCU T (°C)`, Class, `Onset Sice`, `Onset T (°C)`,
-               `PCU RH (%)`, `PCU Inlet RH (%)`, `Dpg (um)`, `σg`, `CPC (n cm^-3)`))
-
-    write.csv(export.df, file = paste0(export.data, "Table.csv"))
-
-  }
-
-
-  # -------------------------------------------------------------------------- #
-  ##### SECTION: Thermodynamic Onset Figure #####
-  #'
-
-  # -------------------------------------------------------------------------- #
-  ##### SECTION: Light Scattering Figures #####
-  #'
-  #'
-
-
-
-
-
-
-
-  all.df <- rbindlist(data.export.ls, fill = T)
-
-  {
-    All.df <- all.df %>%
-      filter(`Inlet Filter ON` == 1) %>%
-      mutate(`Date` = as.Date(`UTC Time`))
-
-    All.df <- right_join(All.df, compounds.df, by = "Date")
-
-    All.df <- All.df %>%
-      filter(str_detect(`Compound`, "bisulfate")) %>%
-      filter(str_detect(`Compound`, "ammonium")) %>%
-      mutate(`Saturated` = if_else(`Lamina S Liquid` >= 1, "Saturated", "Subsaturated")) %>%
-      mutate(`Lamina Breaks` = factor(`Lamina Breaks`, levels = c(-35, -40, -45)))
-  }
-
-  gg1 <- ggplot(All.df, aes(y = `Depolarization`, x = after_stat(scaled), fill = `Lamina Breaks`)) +
-    geom_density(alpha = 0.4) +
-    scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
-    scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
-    ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
-    xlab(label = "Normalized Density") +
-    theme(panel.background = element_rect(fill = "white"),
-          plot.background = element_rect(fill = "white"),
-          panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
-          panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
-          panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
-          axis.title.x = element_text(vjust = -1),
-          axis.title.y = element_text(vjust = 4),
-          axis.ticks.length = unit(2, "mm"),
-          axis.minor.ticks.length = unit(1, "mm"),
-          legend.title = element_blank(),
-          panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
-
-  gg2 <- ggplot(All.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Lamina Breaks`)) +
-    geom_point(size = 0.01, alpha = 0.1) +
-    geom_smooth(alpha = 0.5) +
-    scale_x_continuous(breaks = seq(1, 1.6, 0.1), limits = c(1, 1.6), expand = c(0.001, 0.001)) +
-    scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
-    xlab(label = latex2exp::TeX(r'($S_{ice}$)')) +
-    theme(panel.background = element_rect(fill = "white"),
-          plot.background = element_rect(fill = "white"),
-          panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
-          panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
-          panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
-          axis.title.x = element_text(vjust = -2),
-          axis.title.y = element_blank(),
-          axis.ticks.length = unit(2, "mm"),
-          axis.minor.ticks.length = unit(1, "mm"),
-          panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) +
-    guides(color = FALSE)
-
-  combined <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
-    (gg2 & theme(plot.tag.position  = c(.785, .96))) +
-    plot_annotation(tag_levels = "a") +
-    plot_layout(guides = "collect") & theme(legend.position = "right")
-
-  plot.filename = paste0(export.plot, "Light.png")
-
-  ggsave(plot.filename, combined, width = 10, height = 6)
+  write.csv(export.df, file = paste0(export.data, "summary_level2.csv"))
 }
 
+# -------------------------------------------------------------------------- #
+##### SECTION: Merge Literature and Experiment List #####
+#'
+
+# {
+#   compounds.df <- readxl::read_xlsx('~/Library/CloudStorage/Box-Box/Organosulfate Proxies/README_Compounds.xlsx', na = "NA")
+#   literature.df <- readxl::read_xlsx('~/Library/CloudStorage/Box-Box/Organosulfate Proxies/README_Literature.xlsx', na = "NA")
+#
+#   data.df <- right_join(export.df, compounds.df, by = "Date") %>%
+#     select(`Date`, `Compound`, `Tg,Dry (K)`, `Heating Temperature`, everything()) %>%
+#     arrange(`Date`) %>%
+#     filter(!is.na(`Lamina Breaks`))
+#
+#   data.df[sapply(data.df, is.infinite)] <- NA
+#   data.df[sapply(data.df, is.nan)] <- NA
+#
+#   for (i in 1:nrow(data.df)){
+#
+#     if (!is.na(data.df$`Tg,Dry (K)`[i]) & !is.na(data.df$`PCU RH`[i])){
+#
+#       tmp <- Tg.calc(data.df$`Dpg (um)`[i]*1000, data.df$`PCU RH`[i], k = data.df$Kappa[i], kGT = 2.5, TgDry = data.df$`Tg,Dry (K)`[i], Error = data.df$Error[i])
+#
+#       data.df$Tg[i] = tmp[1]
+#       data.df$TgError[i] = tmp[2]
+#     } else {
+#       data.df$Tg[i] = NA
+#       data.df$TgError[i] = NA
+#     }
+#   }
+#
+#   data.df <- data.df %>%
+#     select(`Date`, `Compound`, `Tg,Dry (K)`, `Error`, `Tg`, `TgError`, `Heating Temperature`, everything())
+#
+#   other.df <- data.df %>%
+#     filter(`Class` == "Droplet" | is.na(`Class`)) %>%
+#     mutate(`Phase` = "Liquid")
+#
+#   data.df <- data.df %>%
+#     filter(`Class` == "Ice") %>%
+#     mutate(`Phase` = "Glassy")
+#
+#   data.df <- rbind(data.df, literature.df, use.names = T, fill = T)
+#
+#   data.df <- data.df %>%
+#     mutate(`Phase` = if_else(is.na(`Phase`), "Glassy", `Phase`)) %>%
+#     mutate(`Class` = if_else(is.na(`Class`), "Ice", `Class`))
+#
+#   data.df <- rbind(data.df, other.df, fill = T) %>%
+#     filter(!str_detect(`Compound`, "ammonium")) %>%
+#     mutate(`Class` = factor(`Class`, levels = c("Ice", "Droplet"))) %>%
+#     mutate(`Phase` = factor(`Phase`, levels = c("Liquid", "Glassy")))
+#
+#   data.df <- data.df %>%
+#     mutate(`Label` = if_else(is.na(`Source`), `Compound`, paste0(`Compound`, " (", `Source`, ")")))
+#
+#   # This removes any of the data points from the table that correspond to literature
+#   export.df <- data.df %>%
+#     filter(!is.na(`Date`)) %>%
+#     arrange(`Class`, `Compound`) %>%
+#     mutate(`Generation Method` = if_else(!is.na(`Heating Temperature`), paste0(`Heating Temperature`, " (°C), ", Flowrate, " L min-1"), "Atomizer")) %>%
+#     mutate(`Tg,Dry (°C)` = paste0(round(`Tg,Dry (K)` - 273.15, 0), " ± ", `Error`), ) %>%
+#     mutate(`Tg (°C)` = paste0(round(`Tg` - 273.15, 0), " ± ", round(`TgError`, 0))) %>%
+#     mutate(across(`Onset RH`:`Onset Temperature Error`, \(x) round(x, 2))) %>%
+#     mutate(`Onset Sice` = paste0(`Onset RH`, " ± ", `Onset RH Error`)) %>%
+#     mutate(`Onset T (°C)` = paste0(`Onset Temperature`, " ± ", `Onset Temperature Error`)) %>%
+#     mutate(`PCU T (°C)` = paste0(round(`PCU Lamina`, 2), " ± ", round(`PCU Lamina Error`, 2))) %>%
+#     mutate(`PCU RH (%)` = paste0(round(`PCU RH`, 0), " ± ", round(`PCU RH Error`, 1))) %>%
+#     mutate(`PCU Inlet RH (%)` = paste0(round(`Inlet RH`, 0), " ± ", round(`Inlet RH Error`, 1))) %>%
+#     mutate(`Dpg (um)` = round(`Dpg (um)`, 3)) %>%
+#     mutate(`σg` = round(`Geometric Standard Deviation`, 2)) %>%
+#     mutate(`CPC (n cm^-3)` = round(CPC, 0)) %>%
+#     relocate(`Generation Method`, .after = `Compound`) %>%
+#     select(c(`Date`, Compound, `Generation Method`, `Tg,Dry (°C)`, `Tg (°C)`,
+#              `PCU T (°C)`, Class, `Onset Sice`, `Onset T (°C)`,
+#              `PCU RH (%)`, `PCU Inlet RH (%)`, `Dpg (um)`, `σg`, `CPC (n cm^-3)`))
+#
+#   write.csv(export.df, file = paste0(export.data, "Table.csv"))
+#
+# }
+
+
+# -------------------------------------------------------------------------- #
+##### SECTION: Thermodynamic Onset Figure #####
+#'
 
 
 
 {
+
+  test <- export.df
+
   Temp = seq(-75, -10, length.out = 1000)
   SS.ice = seq(0.80, 1.80, length.out = 1000)
   SS.liquid = SS.ice*(p_ice(Temp)/p_liquid(Temp))
@@ -799,7 +745,7 @@
       axis.ticks.y = element_line(linewidth = 0.5),
       axis.ticks.length = unit(2, "mm"),
       plot.margin = unit(c(1, 1, 1, 1), "cm")
-  )
+    )
 }
 
 
@@ -850,6 +796,83 @@ back.gg + geom_errorbar(
 
 plot.filename = paste0(export.plot, "Summary.png")
 ggsave(plot.filename, width = 12, height = 8)
+
+# -------------------------------------------------------------------------- #
+##### SECTION: Light Scattering Figures #####
+#'
+#'
+
+
+
+
+
+
+
+all.df <- rbindlist(data.export.ls, fill = T)
+
+{
+  All.df <- all.df %>%
+    filter(`Inlet Filter ON` == 1) %>%
+    mutate(`Date` = as.Date(`UTC Time`))
+
+  All.df <- right_join(All.df, compounds.df, by = "Date")
+
+  All.df <- All.df %>%
+    filter(str_detect(`Compound`, "bisulfate")) %>%
+    filter(str_detect(`Compound`, "ammonium")) %>%
+    mutate(`Saturated` = if_else(`Lamina S Liquid` >= 1, "Saturated", "Subsaturated")) %>%
+    mutate(`Lamina Breaks` = factor(`Lamina Breaks`, levels = c(-35, -40, -45)))
+}
+
+gg1 <- ggplot(All.df, aes(y = `Depolarization`, x = after_stat(scaled), fill = `Lamina Breaks`)) +
+  geom_density(alpha = 0.4) +
+  scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
+  ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
+  xlab(label = "Normalized Density") +
+  theme(panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white"),
+        panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+        panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+        panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+        axis.title.x = element_text(vjust = -1),
+        axis.title.y = element_text(vjust = 4),
+        axis.ticks.length = unit(2, "mm"),
+        axis.minor.ticks.length = unit(1, "mm"),
+        legend.title = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+
+gg2 <- ggplot(All.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Lamina Breaks`)) +
+  geom_point(size = 0.01, alpha = 0.1) +
+  geom_smooth(alpha = 0.5) +
+  scale_x_continuous(breaks = seq(1, 1.6, 0.1), limits = c(1, 1.6), expand = c(0.001, 0.001)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
+  xlab(label = latex2exp::TeX(r'($S_{ice}$)')) +
+  theme(panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white"),
+        panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+        panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+        panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+        axis.title.x = element_text(vjust = -2),
+        axis.title.y = element_blank(),
+        axis.ticks.length = unit(2, "mm"),
+        axis.minor.ticks.length = unit(1, "mm"),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) +
+  guides(color = FALSE)
+
+combined <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
+  (gg2 & theme(plot.tag.position  = c(.785, .96))) +
+  plot_annotation(tag_levels = "a") +
+  plot_layout(guides = "collect") & theme(legend.position = "right")
+
+plot.filename = paste0(export.plot, "Light.png")
+
+ggsave(plot.filename, combined, width = 10, height = 6)
+}
+
+
+
+
 
 
 

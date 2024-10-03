@@ -26,6 +26,7 @@
   # Plotting libraries
   library(ggplot2)
   library(ggpubr)
+  library(patchwork)
   library(ggsci)
   library(viridis)
   library(RColorBrewer)
@@ -360,14 +361,15 @@
           {
             print(paste0(date.c, ": Classification"))
 
-            # Classifier
+            # Apply classifier to dataset
             class.df <- spin.classifier(dataALL.df, ML.option = F, size.limit = THRESHOLD.Dp.nm)
+
+            # Reorder columns
             tmp.c <- colnames(class.df)
 
             # apply classifier function
             export.df <- cbind(dataALL.df, class.df) %>%
-              select(all_of(tmp.c), .after = "Depolarization")
-
+              relocate(all_of(tmp.c), .after = "Depolarization")
           }
         }
       }
@@ -448,8 +450,6 @@
       bins.ix <- suppressWarnings(which(!is.na(as.numeric(colnames(dataSPIN.df)))))
       bins.nm <- colnames(dataSPIN.df)[bins.ix]
 
-      dataSPIN.df$P1[which(is.na(dataSPIN.df$Class))]
-
       # Plot path
       export.plot.path = paste0(export.plot, str_remove_all(date.c, '-'), "/")
 
@@ -497,7 +497,6 @@
           geom_point(size = 0.1, alpha = 0.5) +
           scale_x_continuous(limits = c(1, 5), expand = c(0, 0)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
-          labs(title = title.main, subtitle = title.sub) +
           facet_wrap(~`Lamina Breaks`) +
           scale_color_manual(values = cbPalette) +
           theme(
@@ -518,7 +517,8 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        plot.gg <- ggarrange(gg1, gg2, nrow = 2, common.legend = T, legend = "right")
+        plot.gg <- ggarrange(gg1, gg2, nrow = 2, common.legend = T, legend = "right") +
+          plot_annotation(title = title.main, subtitle = title.sub)
 
         ggsave(
           plot.filename,
@@ -539,12 +539,21 @@
         tmp.df <- dataSPIN.df %>%
           filter(`Inlet Filter ON` == 0)
 
-        gg1 <- ggplot(tmp.df, aes(y = `Depolarization`, x = after_stat((count/sum(count))), fill = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
-          geom_density(alpha = 0.5) +
-          scale_x_continuous(expand = c(0.001, 0.001)) +
+        plot.filename <- paste0(export.plot.path, date.c, " Scattering Classification", " Experiment ", ID, ".png")
+
+        annotation.df <- data.frame(Temperature = unique(as.numeric(as.character(tmp.df$`Lamina Breaks`))))
+
+        annotation.df <- annotation.df %>%
+          mutate(`Annotation` = homogeneous.freezing.solver(Temperature, 0.3, 60)) %>%
+          mutate(`Annotation` = if_else(`Temperature` > -38, (100*p_liquid(Temperature)/p_ice(Temperature))/100, Annotation)) %>%
+          mutate(`Label` = if_else(`Temperature` > -38, "Water Saturation", "Homogeneous Freezing"))
+
+        gg1 <- ggplot(tmp.df, aes(y = `Depolarization`, x = after_stat(scaled), fill = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
+          geom_density(alpha = 0.4, adjust = 2.5) +
+          scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
-          xlab(label = "Percentage Counts") +
+          xlab(label = "Kernel Density Estimate (KDE)") +
           scale_fill_manual(values = cbPalette) +
           theme(panel.background = element_rect(fill = "white"),
                 plot.background = element_rect(fill = "white"),
@@ -552,15 +561,23 @@
                 panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
                 panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
                 axis.title.x = element_text(vjust = -1),
-                axis.title.y = element_text(vjust = 4),
+                axis.title.y = element_text(vjust = 2, size = 14),
                 axis.ticks.length = unit(2, "mm"),
                 axis.minor.ticks.length = unit(1, "mm"),
                 legend.title = element_blank(),
-                panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+                panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) +
+          coord_fixed()
 
-        gg2 <- ggplot(tmp.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Lamina Breaks`)) +
+        gg2 <- ggplot(tmp.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
+          annotate("rect", ymin = 0.4, ymax = 0.6, xmin = 1, xmax = 1.6, fill = "gray60", alpha = 0.2) +
+          annotate("text", y = 0.5, x = 1.05, label = "Ice") +
+          annotate("rect", ymin = 0.15, ymax = 0.4, xmin = 1, xmax = 1.6, fill = "gray80", alpha = 0.2) +
+          annotate("text", y = 0.275, x = 1.05, label = "Droplet") +
           geom_point(size = 0.01, alpha = 0.1) +
           geom_smooth(alpha = 0.5) +
+          geom_vline(data = annotation.df, aes(xintercept = `Annotation`, col = as.factor(`Temperature`)), linetype = 2) +
+          geom_text(data = annotation.df, aes(x = `Annotation`, y = 0.8, label = `Label`, color = as.factor(`Temperature`)), inherit.aes = F,
+                    angle = 90, nudge_x = -0.0105, size = 3) +
           scale_x_continuous(breaks = seq(1, 1.6, 0.1), limits = c(1, 1.6), expand = c(0.001, 0.001)) +
           scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           xlab(label = latex2exp::TeX(r'($S_{ice}$)')) +
@@ -570,22 +587,34 @@
                 panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
                 panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
                 panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+                axis.text.y = element_blank(),
                 axis.title.x = element_text(vjust = -2),
                 axis.title.y = element_blank(),
                 axis.ticks.length = unit(2, "mm"),
                 axis.minor.ticks.length = unit(1, "mm"),
+                panel.ontop = F,
                 panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) +
-          guides(color = FALSE)
+          guides(color = "none") +
+          coord_fixed(ratio = 1/1.6)
 
-        combined <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
+        plot.gg <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
           (gg2 & theme(plot.tag.position  = c(.785, .96))) +
           plot_annotation(tag_levels = "a") +
           plot_layout(guides = "collect") & theme(legend.position = "right")
 
-        plot.filename = paste0(export.plot, "Light.png")
-
-        ggsave(plot.filename, combined, width = 10, height = 6)
+        ggsave(
+          plot.filename,
+          plot.gg,
+          width = 10,
+          height = 5,
+          dpi = 300,
+          units = "in",
+          bg = "#ffffff"
+        )
       }
+    }
+  }
+}
 
       # ------------------------------------------------------------------------ #
       ##### SUBSECTION: Correlation Plots #####
@@ -882,6 +911,4 @@
       }
     }
   }
-
-  file.remove(paste0(export.data, "TMP.RDS"))
 }
