@@ -35,7 +35,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/TAMU Purdue Experiments")
+  setwd("~/Library/CloudStorage/Box-Box/Organosulfate Proxies")
   work.dir <- getwd()
 
   # Instrument time zone
@@ -51,8 +51,8 @@
   export.plot = paste0(work.dir, "/SPIN/export/plots/")
 
   #' @importFrom
-  source(paste0("~/Documents/R/functions/", "functions_microphysics.R"))
-  source(paste0("~/Documents/R/functions/", "functions_spin_plotting.R"))
+  source(paste0("~/Documents/GitHub/functions/", "functions_microphysics.R"))
+  source(paste0("~/Documents/GitHub/functions/", "functions_spin_plotting.R"))
 }
 
 # ---------------------------------------------------------------------------- #
