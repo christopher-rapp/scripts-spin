@@ -354,6 +354,8 @@
                 filter(`Total Flow (LPM)` <= threshold.upper.nm)
             }
           }
+        }
+      }
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Classification #####
@@ -530,6 +532,35 @@
           bg = "#ffffff"
         )
       }
+
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Size Histograms #####
+      #'
+
+      print(paste0(date.c, ": Size Histograms"))
+
+      title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
+      title.sub <- paste0("Size Histograms: ", date.c, ", Experiment ", ID)
+
+      # Colorblind accessible color palette
+      cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+      plot.filename <- paste0(export.plot.path, date.c, " Size Histograms", " Experiment ", ID, ".png")
+
+      # Convert to long format for easier plotting
+      tmp.long <- dataSPIN.df %>%
+        select(`Class`, all_of(bins.ix)) %>%
+        pivot_longer(
+          cols = !c("Class"),
+          names_to = "Variable",
+          values_to = "Value"
+        )
+
+      tmp.long <- tmp.long %>%
+        mutate(`Variable` = factor(`Variable`, levels = as.character(bins.nm)))
+
+      ggplot(tmp.long, aes(fill = `Class`, y = `Value`, x = `Variable`)) +
+        geom_bar(position="stack", stat="identity")
 
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Light Scattering  #####
