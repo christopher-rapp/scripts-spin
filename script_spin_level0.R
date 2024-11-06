@@ -71,6 +71,7 @@
   # Pull POSIX style dates from directory names
   spin.dates <- as.Date(spin.dirs, format = '%Y%m%d')
 
+  # Normal loop
   for (n in 1:length(spin.dates)){
 
     {

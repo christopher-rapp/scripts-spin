@@ -56,7 +56,7 @@
   source(paste0("~/Documents/GitHub/functions/", "functions_microphysics.R"))
   source(paste0("~/Documents/GitHub/functions/", "functions_spin_plotting.R"))
   source(paste0("~/Documents/GitHub/functions/", "functions_spin_lamina.R"))
-  source(paste0("~/Documents/GitHub/functions/", "functions_spin_classifier.R"))
+  source(paste0("~/Documents/GitHub/functions/", "functions_spin_classification.R"))
 }
 
 # ---------------------------------------------------------------------------- #
@@ -84,20 +84,21 @@
   # Plotting on?
   PLOT.ON = T
 
-  # Minimum threshold in um to be considered ice
-  THRESHOLD.Dp.nm = 2.5
   {
+    # Set threshold for size total
+    THRESHOLD.Dp.nm <- 2.5
     data.export.ls <- NULL
+    model.export.ls <- NULL
     for (n in 1:length(spin.dates)){
+
+      # Code Timing
+      pct <- proc.time()
 
       {
         print(paste0("Level 1 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
 
         # Memory management
         gc(verbose = F)
-
-        # Code Timing
-        pct <- proc.time()
 
         if (spin.dates[n] == "2024-01-24"){
           next
@@ -196,14 +197,15 @@
 
               # Calculate total particle density larger than cutoff
               tmp.df <- dataBINS.df %>%
-                mutate(`Total Particles` = rowSums(select(., .dots = all_of(cutoff.bins.nm)))) %>%
+                mutate(`Total Size Ice` = rowSums(select(., .dots = all_of(cutoff.bins.nm)))) %>%
+                mutate(`Total Size All` = rowSums(select(., .dots = all_of(bins.nm)))) %>%
                 mutate(`Inlet Filter ON` = dataSPIN.df$`Inlet Filter ON`) %>%
-                select(`Inlet Filter ON`, `Total Particles`)
+                select(`Inlet Filter ON`, `Total Size Ice`, `Total Size All`)
 
               # Set total backgrounds to NA for when the inlet filter is on
               # Using 0 will sway statistics significantly
               tmp.df <- tmp.df %>%
-                mutate(`Total Background` = if_else(`Inlet Filter ON` == 1, `Total Particles`, NA), .after = `Total Particles`)
+                mutate(`Total Background` = if_else(`Inlet Filter ON` == 1, `Total Size Ice`, NA), .after = `Total Size Ice`)
 
               # Using a linear interpolation to fill in the time series than averaging gives a higher background ice concentration
               # This gives a more conservative approach in declaring ice counts
@@ -217,7 +219,8 @@
               # Round up to the nearest particle
               tmp.df <- tmp.df %>%
                 mutate(`Total Background` = ceiling(`Total Background`)) %>%
-                select(!`Inlet Filter ON`)
+                select(!`Inlet Filter ON`) %>%
+                mutate(`Size Threshold` = THRESHOLD.Dp.nm)
 
               # Merge totals back including backgrounds
               dataBINS.df <- cbind(dataBINS.df, tmp.df)
@@ -240,7 +243,7 @@
               cbind(dataBINS.df) %>%
               mutate(`Units` = "n/cc") %>%
               relocate(all_of(bins.nm), .before = "Units") %>%
-              relocate(c(`Total Particles`, `Total Background`), .after = `Units`)
+              relocate(c(`Total Size Ice`, `Total Background`), .after = `Units`)
           }
 
           # ------------------------------------------------------------------ #
@@ -319,6 +322,10 @@
               mutate(`Depolarization` = if_else(Depolarization < 0, NA, Depolarization)) %>%
               filter(!is.na(`Depolarization`))
 
+            # Scale the Log Size variable so it is between 0 and 1
+            dataALL.df <- dataALL.df %>%
+              mutate(`OPC Size` = scales::rescale(`Log Size`, to = c(0, 1)), .before = `Depolarization`)
+
             # Order columns
             dataALL.df <- dataALL.df %>%
               relocate(`S1`:`Depolarization`, .after = `Inlet Filter ON`)
@@ -354,8 +361,6 @@
                 filter(`Total Flow (LPM)` <= threshold.upper.nm)
             }
           }
-        }
-      }
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Classification #####
@@ -363,15 +368,22 @@
           {
             print(paste0(date.c, ": Classification"))
 
-            # Apply classifier to dataset
-            class.df <- spin.classifier(dataALL.df, ML.option = F, size.limit = THRESHOLD.Dp.nm)
+            # Apply classifier function
+            # See documentation for specifics
+            data.ls <- spin.classifier(data = dataALL.df,
+                                       c.logsize.aerosol = 0.1,
+                                       c.depolarization.aerosol = 0.2,
+                                       c.logsize.ice = 0.4,
+                                       c.depolarization.ice = 0.4,
+                                       size.ice = 2.5,
+                                       size.all = 0,
+                                       processing.cores = 12)
 
-            # Reorder columns
-            tmp.c <- colnames(class.df)
+            # Retrieve original dataframe back from classifier
+            export.df <- data.ls[[1]]
 
-            # apply classifier function
-            export.df <- cbind(dataALL.df, class.df) %>%
-              relocate(all_of(tmp.c), .after = "Depolarization")
+            # Export the model results including caret::train output, confusion matrix, and prcomp result
+            model.ls <- data.ls[2:4]
           }
         }
       }
@@ -386,6 +398,9 @@
         # Export data to a temporary list for optional plotting later
         data.export.ls[[n]] <- export.df
 
+        # Export modeling data to an optional list
+        model.export.ls[[n]] <- model.ls
+
         # Check if export path exists
         # If it does not, create it
         if (!dir.exists(export.data)) {
@@ -399,11 +414,18 @@
 
         # Save data using data.table::fwrite
         data.table::fwrite(export.df, file = export.filename, showProgress = T)
+
+        # Code benchmarking
+        print(paste0(date.c, ', Elapsed Time (s) ', round((
+          proc.time() - pct)[3], 2)))
       }
     }
 
     # Backup data from current run for testing
     saveRDS(data.export.ls, file = paste0(export.data, "TMP.RDS"))
+
+    # Backup modeling data
+    saveRDS(model.export.ls, file = paste0(export.data, "MOD.RDS"))
 
     # Clean environment
     rm(data.ls, dataALL.df, dataLOG.df, dataPBP.df, dataSPIN.df, bins.ix, bins.nm, convert.nm, date.c, n, ramp.break, sequence.ramps.tm)
@@ -455,7 +477,46 @@
       # Plot path
       export.plot.path = paste0(export.plot, str_remove_all(date.c, '-'), "/")
 
-      # ------------------------------------------------------------------------ #
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Size Histograms #####
+      #'
+
+      print(paste0(date.c, ": Size Histograms"))
+
+      title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
+      title.sub <- paste0("Size Histograms: ", date.c, ", Experiment ", ID)
+
+      # Colorblind accessible color palette
+      cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+      plot.filename <- paste0(export.plot.path, date.c, " Size Histograms", " Experiment ", ID, ".png")
+
+      # Convert to long format for easier plotting
+      tmp.long <- dataSPIN.df %>%
+        select(`ML Class`, all_of(bins.ix)) %>%
+        pivot_longer(
+          cols = !c("ML Class"),
+          names_to = "Variable",
+          values_to = "Value"
+        )
+
+      tmp.long <- tmp.long %>%
+        mutate(`Variable` = factor(`Variable`, levels = as.character(bins.nm)))
+
+      plot.gg <- ggplot(tmp.long, aes(fill = `ML Class`, y = `Value`, x = `Variable`)) +
+        geom_bar(stat = "identity")
+
+      ggsave(
+        plot.filename,
+        plot.gg,
+        width = 8,
+        height = 8,
+        dpi = 300,
+        units = "in",
+        bg = "#ffffff"
+      )
+
+      # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Classification Plot #####
       #
 
@@ -534,33 +595,142 @@
       }
 
       # ---------------------------------------------------------------------- #
-      ##### SUBSECTION: Size Histograms #####
+      ##### SUBSECTION: Classifier Performance #####
       #'
 
-      print(paste0(date.c, ": Size Histograms"))
+      # Model Performance
+      {
+        plot.filename <- paste0(export.plot.path, date.c, " ML Model Performance", " Experiment", ".png")
 
-      title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
-      title.sub <- paste0("Size Histograms: ", date.c, ", Experiment ", ID)
-
-      # Colorblind accessible color palette
-      cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-
-      plot.filename <- paste0(export.plot.path, date.c, " Size Histograms", " Experiment ", ID, ".png")
-
-      # Convert to long format for easier plotting
-      tmp.long <- dataSPIN.df %>%
-        select(`Class`, all_of(bins.ix)) %>%
-        pivot_longer(
-          cols = !c("Class"),
-          names_to = "Variable",
-          values_to = "Value"
+        png(
+          plot.filename,
+          width = 6,
+          height = 4,
+          units = "in",
+          bg = "white",
+          res = 300
         )
 
-      tmp.long <- tmp.long %>%
-        mutate(`Variable` = factor(`Variable`, levels = as.character(bins.nm)))
+        plot(data.ls[[2]])
 
-      ggplot(tmp.long, aes(fill = `Class`, y = `Value`, x = `Variable`)) +
-        geom_bar(position="stack", stat="identity")
+        dev.off()
+      }
+
+      # Model Performance
+      {
+        plot.filename <- paste0(export.plot.path, date.c, " PCA Model Performance", " Experiment", ".png")
+
+        tmp <- factoextra::fviz_pca_biplot(data.ls[[4]]) + factoextra::fviz_screeplot(data.ls[[4]])
+
+        ggsave(filename = plot.filename, tmp, width = 8, height = 6)
+      }
+
+      # Plotting
+      {
+
+        # Colorblind accessible color palette
+        cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+        gg1 <- ggplot(dataALL.df, aes(x = `OPC Size`, y = `Depolarization`, col = `Class`)) +
+          geom_point(size = 0.1, alpha = 0.5) +
+          scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_color_manual(values = cbPalette) +
+          labs(title = "Preliminary Classification") +
+          theme(
+            plot.title = element_text(),
+            plot.subtitle = element_text(color = "gray25"),
+            panel.background = element_rect(fill = "white"),
+            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+            panel.border = element_rect(colour = "black", fill = NA),
+            axis.title.x = element_text(vjust = -1.5),
+            axis.title.y = element_text(vjust = 2),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
+            axis.ticks.length = unit(1, "mm"),
+            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
+            aspect.ratio = 1
+          ) + coord_cartesian(clip = "off") +
+          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+
+        gg2 <- ggplot(dataALL.df, aes(x = `OPC Size`, y = `Depolarization`, col = `ML Class`)) +
+          geom_point(size = 0.1, alpha = 0.5) +
+          scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_color_manual(values = cbPalette) +
+          labs(title = "PCA-SVM Classification") +
+          theme(
+            plot.title = element_text(),
+            plot.subtitle = element_text(color = "gray25"),
+            panel.background = element_rect(fill = "white"),
+            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+            panel.border = element_rect(colour = "black", fill = NA),
+            axis.title.x = element_text(vjust = -1.5),
+            axis.title.y = element_text(vjust = 2),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
+            axis.ticks.length = unit(1, "mm"),
+            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
+            aspect.ratio = 1
+          ) + coord_cartesian(clip = "off") +
+          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+
+        gg3 <- ggplot(dataALL.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `Class`)) +
+          geom_point(size = 0.1, alpha = 0.5) +
+          scale_x_continuous(limits = c(1, 1.7), breaks = seq(1, 1.7, 0.1)) +
+          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_color_manual(values = cbPalette) +
+          theme(
+            plot.title = element_text(),
+            plot.subtitle = element_text(color = "gray25"),
+            panel.background = element_rect(fill = "white"),
+            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+            panel.border = element_rect(colour = "black", fill = NA),
+            axis.title.x = element_text(vjust = -1.5),
+            axis.title.y = element_text(vjust = 2),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
+            axis.ticks.length = unit(1, "mm"),
+            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
+            aspect.ratio = 1
+          ) + coord_cartesian(clip = "off") +
+          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+
+        gg4 <- ggplot(dataALL.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `ML Class`)) +
+          geom_point(size = 0.1, alpha = 0.5) +
+          scale_x_continuous(limits = c(1, 1.7), breaks = seq(1, 1.7, 0.1)) +
+          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+          scale_color_manual(values = cbPalette) +
+          theme(
+            plot.title = element_text(),
+            plot.subtitle = element_text(color = "gray25"),
+            panel.background = element_rect(fill = "white"),
+            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+            panel.border = element_rect(colour = "black", fill = NA),
+            axis.title.x = element_text(vjust = -1.5),
+            axis.title.y = element_text(vjust = 2),
+            axis.ticks.x = element_line(linewidth = 0.5),
+            axis.ticks.y = element_line(linewidth = 0.5),
+            axis.ticks.length = unit(1, "mm"),
+            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
+            aspect.ratio = 1
+          ) + coord_cartesian(clip = "off") +
+          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+
+        total.gg <- gg1 + gg2 + gg3 + gg4 + plot_layout(ncol = 2, widths = c(1, 1), guides = "collect")
+
+        plot.filename <- paste0(export.plot, date.c, " Classification.png")
+
+        ggsave(filename = plot.filename, total.gg, width = 10, height = 8)
+      }
 
       # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Light Scattering  #####

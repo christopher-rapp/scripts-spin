@@ -62,7 +62,6 @@
   source(paste0("~/Documents/GitHub/functions/", "functions_microphysics.R"))
   source(paste0("~/Documents/GitHub/functions/", "functions_spin_plotting.R"))
   source(paste0("~/Documents/GitHub/functions/", "functions_spin_lamina.R"))
-  source(paste0("~/Documents/GitHub/functions/", "functions_spin_classifier.R"))
 }
 
 # ---------------------------------------------------------------------------- #
@@ -265,7 +264,7 @@
         dataALL.df <- dataALL.df %>%
           mutate(`Lamina Breaks` = as.factor(`Lamina Breaks`)) %>%
           relocate(all_of(tmp.c), .after = `Depolarization`) %>%
-          relocate(c(`Lamina Breaks`, `Depolarization`, `Size Threshold`), .after = `Lamina S Liquid`)
+          relocate(c(`Lamina Breaks`, `Depolarization`), .after = `Lamina S Liquid`)
       }
 
       # ---------------------------------------------------------------------- #
@@ -298,23 +297,6 @@
       ID.c <- unique(dataSPIN.df$`Experiment Ramp ID`)
 
       # ---------------------------------------------------------------------- #
-      ##### SUBSECTION: Classification #####
-
-      {
-        print(paste0(date.c, ": Classification"))
-
-        # Apply classifier to dataset
-        class.df <- spin.classifier(dataALL.df, ML.option = F, size.limit = THRESHOLD.Dp.nm)
-
-        # Reorder columns
-        tmp.c <- colnames(class.df)
-
-        # apply classifier function
-        export.df <- cbind(dataALL.df, class.df) %>%
-          relocate(all_of(tmp.c), .after = "Depolarization")
-      }
-
-      # ---------------------------------------------------------------------- #
       ##### SUBSECTION: Activation Analysis #####
       #'
 
@@ -325,26 +307,29 @@
         {
           # Subtract number density of backgrounds
           dataSPIN.df <- dataSPIN.df %>%
-            mutate(`Total Particles` = `Total Particles`*THRESHOLD.CF.nm) %>%
+            mutate(`Total Size All` = `Total Size All`*THRESHOLD.CF.nm) %>%
+            mutate(`Total Size Ice` = `Total Size Ice`*THRESHOLD.CF.nm) %>%
             mutate(`Total Background` = `Total Background`*THRESHOLD.CF.nm)
 
           if (sum(dataSPIN.df$`Total Background`, na.rm = T) == 0){
 
-            # If there is very limited data for backgrounds apply correction factor
+            # If there is very limited data for backgrounds apply correction factor as the total concentration
             dataSPIN.df$`Total Background` <- 1.4
           }
 
           dataSPIN.df <- dataSPIN.df %>%
-            mutate(`Total OPC` = `Total Particles` - `Total Background`, .after = `Total Background`) %>%
-            mutate(`Total OPC` = if_else(`Total OPC` > 0, `Total OPC`, 0))
+            mutate(`Total Size Ice` = `Total Size All` - `Total Size All`, .after = `Total Background`) %>%
+            mutate(`Total Size Ice` = if_else(`Total Size Ice` > 0, `Total Size Ice`, 0))
 
           # Set values when the filter is on to NA
           # Using NA here as it will artifically lower the actual number due to weighting
           dataSPIN.df <- dataSPIN.df %>%
-            mutate(`Total OPC` = if_else(`Inlet Filter ON` == 1, NA, `Total OPC`)) %>%
-            mutate(`Activation Fraction (%)` = (`Total OPC`/`Total CN`)*100, .before = `Depolarization`) %>%
+            mutate(`Total Size Ice` = if_else(`Inlet Filter ON` == 1, NA, `Total Size Ice`)) %>%
+            mutate(`Activation Fraction (%)` = (`Total Size Ice`/`Total CN`)*100, .before = `Depolarization`) %>%
+            mutate(`Water Uptake Fraction (%)` = ((`Total Size All` - `Total Size Ice`)/`Total CN`)*100, .before = `Depolarization`) %>%
             filter(`Activation Fraction (%)` <= 100) %>%
-            filter(!`Class` == "")
+            mutate(`Class` = `ML Class`) %>%
+            select(!`ML Class`)
         }
 
         if (nrow(dataSPIN.df) < 1200){
