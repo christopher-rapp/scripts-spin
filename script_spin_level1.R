@@ -31,6 +31,9 @@
   library(viridis)
   library(RColorBrewer)
 
+  # ML libraries
+  library(caret)
+
   # Plotting parameters
   resolution.dpi = 400
   font.family = "Helvetica"
@@ -447,6 +450,10 @@
     data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
     data.export.ls <- data.export.ls[which(lengths(data.export.ls) != 0)]
 
+    # Read back in looped data from above and filter empty data
+    model.export.ls <- readRDS(paste0(export.data, "MOD.RDS"))
+    model.export.ls <- model.export.ls[which(lengths(model.export.ls) != 0)]
+
     # This creates individual dataframes for each experiment
     data.export.ls <- lapply(data.export.ls, function(x){
 
@@ -464,6 +471,8 @@
 
       # Retrieve data from the list
       dataSPIN.df <- data.export.ls[[n]]
+
+      data.ls <- model.export.ls[[n]]
 
       # Date string for plotting later
       date.c <- unique(lubridate::as_date(dataSPIN.df$`UTC Time`))[1]
@@ -600,38 +609,40 @@
 
       # Model Performance
       {
+        print(paste0(date.c, ": ML Model Performance"))
+
         plot.filename <- paste0(export.plot.path, date.c, " ML Model Performance", " Experiment", ".png")
 
-        png(
-          plot.filename,
-          width = 6,
-          height = 4,
-          units = "in",
-          bg = "white",
-          res = 300
-        )
+        tmp <- ggplot(data.ls[[1]]$results, aes(x = C, y = Accuracy)) +
+          geom_point() +
+          geom_line(color = 'blue') +
+          theme_minimal()
 
-        plot(data.ls[[2]])
-
-        dev.off()
+        ggsave(filename = plot.filename, tmp, width = 8, height = 6)
       }
 
       # Model Performance
       {
+        print(paste0(date.c, ": PCA Model Performance"))
+
         plot.filename <- paste0(export.plot.path, date.c, " PCA Model Performance", " Experiment", ".png")
 
-        tmp <- factoextra::fviz_pca_biplot(data.ls[[4]]) + factoextra::fviz_screeplot(data.ls[[4]])
+        tmp <- factoextra::fviz_pca_biplot(data.ls[[3]]) + factoextra::fviz_screeplot(data.ls[[3]])
 
         ggsave(filename = plot.filename, tmp, width = 8, height = 6)
       }
 
       # Plotting
       {
+        print(paste0(date.c, ": Classification Model Performance"))
+
+        dataSPIN.df <- dataSPIN.df %>%
+          mutate(`Class` = factor(`Class`, levels = c("Aerosol", "Droplet", "Ice", "Water Uptake", "Other")))
 
         # Colorblind accessible color palette
         cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-        gg1 <- ggplot(dataALL.df, aes(x = `OPC Size`, y = `Depolarization`, col = `Class`)) +
+        gg1 <- ggplot(dataSPIN.df, aes(x = `OPC Size`, y = `Depolarization`, col = `Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
           scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
@@ -655,7 +666,7 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        gg2 <- ggplot(dataALL.df, aes(x = `OPC Size`, y = `Depolarization`, col = `ML Class`)) +
+        gg2 <- ggplot(dataSPIN.df, aes(x = `OPC Size`, y = `Depolarization`, col = `ML Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
           scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
@@ -679,7 +690,7 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        gg3 <- ggplot(dataALL.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `Class`)) +
+        gg3 <- ggplot(dataSPIN.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
           scale_x_continuous(limits = c(1, 1.7), breaks = seq(1, 1.7, 0.1)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
@@ -702,7 +713,7 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        gg4 <- ggplot(dataALL.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `ML Class`)) +
+        gg4 <- ggplot(dataSPIN.df, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `ML Class`)) +
           geom_point(size = 0.1, alpha = 0.5) +
           scale_x_continuous(limits = c(1, 1.7), breaks = seq(1, 1.7, 0.1)) +
           scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
