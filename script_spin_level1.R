@@ -374,9 +374,9 @@
             # Apply classifier function
             # See documentation for specifics
             data.ls <- spin.classifier(data = dataALL.df,
-                                       c.logsize.aerosol = 0.1,
-                                       c.depolarization.aerosol = 0.2,
+                                       c.logsize.aerosol = 0.125,
                                        c.logsize.ice = 0.4,
+                                       c.depolarization.droplet = 0.16,
                                        c.depolarization.ice = 0.4,
                                        size.ice = 2.5,
                                        size.all = 0,
@@ -472,6 +472,7 @@
       # Retrieve data from the list
       dataSPIN.df <- data.export.ls[[n]]
 
+      # Retrieve model data from the list
       data.ls <- model.export.ls[[n]]
 
       # Date string for plotting later
@@ -490,107 +491,31 @@
       ##### SUBSECTION: Size Histograms #####
       #'
 
-      print(paste0(date.c, ": Size Histograms"))
-
-      title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
-      title.sub <- paste0("Size Histograms: ", date.c, ", Experiment ", ID)
-
-      # Colorblind accessible color palette
-      cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-
-      plot.filename <- paste0(export.plot.path, date.c, " Size Histograms", " Experiment ", ID, ".png")
-
-      # Convert to long format for easier plotting
-      tmp.long <- dataSPIN.df %>%
-        select(`ML Class`, all_of(bins.ix)) %>%
-        pivot_longer(
-          cols = !c("ML Class"),
-          names_to = "Variable",
-          values_to = "Value"
-        )
-
-      tmp.long <- tmp.long %>%
-        mutate(`Variable` = factor(`Variable`, levels = as.character(bins.nm)))
-
-      plot.gg <- ggplot(tmp.long, aes(fill = `ML Class`, y = `Value`, x = `Variable`)) +
-        geom_bar(stat = "identity")
-
-      ggsave(
-        plot.filename,
-        plot.gg,
-        width = 8,
-        height = 8,
-        dpi = 300,
-        units = "in",
-        bg = "#ffffff"
-      )
-
-      # ---------------------------------------------------------------------- #
-      ##### SUBSECTION: Classification Plot #####
-      #
-
       {
-        print(paste0(date.c, ": Classification"))
+        print(paste0(date.c, ": Size Histograms"))
 
         title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
-        title.sub <- paste0("Classified: ", date.c, ", Experiment ", ID)
+        title.sub <- paste0("Size Histograms: ", date.c, ", Experiment ", ID)
 
         # Colorblind accessible color palette
         cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-        plot.filename <- paste0(export.plot.path, date.c, " Classification", " Experiment ", ID, ".png")
+        plot.filename <- paste0(export.plot.path, date.c, " Size Histograms", " Experiment ", ID, ".png")
 
-        gg1 <- ggplot(dataSPIN.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = `Class`)) +
-          geom_point(size = 0.1, alpha = 0.5) +
-          scale_x_continuous(limits = c(1, 1.7)) +
-          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
-          xlab(latex2exp::TeX(r'(Lamina $S_{ice}$)')) +
-          scale_color_manual(values = cbPalette) +
-          facet_wrap(~`Lamina Breaks`) +
-          theme(
-            plot.title = element_text(),
-            plot.subtitle = element_text(color = "gray25"),
-            panel.background = element_rect(fill = "white"),
-            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
-            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
-            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
-            panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
-            axis.ticks.x = element_line(linewidth = 0.5),
-            axis.ticks.y = element_line(linewidth = 0.5),
-            axis.ticks.length = unit(1, "mm"),
-            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
-            panel.spacing = unit(2, "lines")
-          ) + coord_cartesian(clip = "off") +
-          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+        # Convert to long format for easier plotting
+        tmp.long <- dataSPIN.df %>%
+          select(`ML Class`, all_of(bins.ix)) %>%
+          pivot_longer(
+            cols = !c("ML Class"),
+            names_to = "Variable",
+            values_to = "Value"
+          )
 
-        gg2 <- ggplot(dataSPIN.df, aes(x = `Log Size`, y = `Depolarization`, color = `Class`)) +
-          geom_point(size = 0.1, alpha = 0.5) +
-          scale_x_continuous(limits = c(1, 5), expand = c(0, 0)) +
-          scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
-          facet_wrap(~`Lamina Breaks`) +
-          scale_color_manual(values = cbPalette) +
-          theme(
-            plot.title = element_text(),
-            plot.subtitle = element_text(color = "gray25"),
-            panel.background = element_rect(fill = "white"),
-            panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
-            panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
-            panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
-            panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
-            axis.ticks.x = element_line(linewidth = 0.5),
-            axis.ticks.y = element_line(linewidth = 0.5),
-            axis.ticks.length = unit(1, "mm"),
-            plot.margin = unit(c(0.2, 0.2, 0.25, 0.2), "cm"),
-            panel.spacing = unit(2, "lines")
-          ) + coord_cartesian(clip = "off") +
-          guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+        tmp.long <- tmp.long %>%
+          mutate(`Variable` = factor(`Variable`, levels = as.character(bins.nm)))
 
-        plot.gg <- ggarrange(gg1, gg2, nrow = 2, common.legend = T, legend = "right") +
-          plot_annotation(title = title.main, subtitle = title.sub)
+        plot.gg <- ggplot(tmp.long, aes(fill = `ML Class`, y = `Value`, x = `Variable`)) +
+          geom_bar(stat = "identity")
 
         ggsave(
           plot.filename,
@@ -604,40 +529,17 @@
       }
 
       # ---------------------------------------------------------------------- #
-      ##### SUBSECTION: Classifier Performance #####
-      #'
+      ##### SUBSECTION: Classification Plot #####
+      #
 
-      # Model Performance
       {
-        print(paste0(date.c, ": ML Model Performance"))
-
-        plot.filename <- paste0(export.plot.path, date.c, " ML Model Performance", " Experiment", ".png")
-
-        tmp <- ggplot(data.ls[[1]]$results, aes(x = C, y = Accuracy)) +
-          geom_point() +
-          geom_line(color = 'blue') +
-          theme_minimal()
-
-        ggsave(filename = plot.filename, tmp, width = 8, height = 6)
-      }
-
-      # Model Performance
-      {
-        print(paste0(date.c, ": PCA Model Performance"))
-
-        plot.filename <- paste0(export.plot.path, date.c, " PCA Model Performance", " Experiment", ".png")
-
-        tmp <- factoextra::fviz_pca_biplot(data.ls[[3]]) + factoextra::fviz_screeplot(data.ls[[3]])
-
-        ggsave(filename = plot.filename, tmp, width = 8, height = 6)
-      }
-
-      # Plotting
-      {
-        print(paste0(date.c, ": Classification Model Performance"))
+        print(paste0(date.c, ": Classification"))
 
         dataSPIN.df <- dataSPIN.df %>%
           mutate(`Class` = factor(`Class`, levels = c("Aerosol", "Droplet", "Ice", "Water Uptake", "Other")))
+
+        title.main <- paste0("Spectrometer for Ice Nucleation (SPIN)")
+        title.sub <- paste0("Classified: ", date.c, ", Experiment ", ID)
 
         # Colorblind accessible color palette
         cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
@@ -649,15 +551,15 @@
           scale_color_manual(values = cbPalette) +
           labs(title = "Preliminary Classification") +
           theme(
-            plot.title = element_text(),
+            plot.title = element_text(size = 10, hjust = 0.5),
             plot.subtitle = element_text(color = "gray25"),
             panel.background = element_rect(fill = "white"),
             panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
             panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
             panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
             panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
+            axis.title.x = element_text(vjust = -1.5, size = 10),
+            axis.title.y = element_text(vjust = 2, size = 10),
             axis.ticks.x = element_line(linewidth = 0.5),
             axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
@@ -673,15 +575,15 @@
           scale_color_manual(values = cbPalette) +
           labs(title = "PCA-SVM Classification") +
           theme(
-            plot.title = element_text(),
+            plot.title = element_text(size = 10, hjust = 0.5),
             plot.subtitle = element_text(color = "gray25"),
             panel.background = element_rect(fill = "white"),
             panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
             panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
             panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
             panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
+            axis.title.x = element_text(vjust = -1.5, size = 10),
+            axis.title.y = element_text(vjust = 2, size = 10),
             axis.ticks.x = element_line(linewidth = 0.5),
             axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
@@ -703,8 +605,8 @@
             panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
             panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
             panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
+            axis.title.x = element_text(vjust = -1.5, size = 10),
+            axis.title.y = element_text(vjust = 2, size = 10),
             axis.ticks.x = element_line(linewidth = 0.5),
             axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
@@ -726,8 +628,8 @@
             panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
             panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
             panel.border = element_rect(colour = "black", fill = NA),
-            axis.title.x = element_text(vjust = -1.5),
-            axis.title.y = element_text(vjust = 2),
+            axis.title.x = element_text(vjust = -1.5, size = 10),
+            axis.title.y = element_text(vjust = 2, size = 10),
             axis.ticks.x = element_line(linewidth = 0.5),
             axis.ticks.y = element_line(linewidth = 0.5),
             axis.ticks.length = unit(1, "mm"),
@@ -736,11 +638,45 @@
           ) + coord_cartesian(clip = "off") +
           guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
 
-        total.gg <- gg1 + gg2 + gg3 + gg4 + plot_layout(ncol = 2, widths = c(1, 1), guides = "collect")
+        total.gg <- gg1 + gg2 + gg3 + gg4 + plot_layout(ncol = 2, widths = c(1, 1), guides = "collect") +
+          plot_annotation(
+            title = paste0('Classification Performance - ', date.c)
+          )
 
         plot.filename <- paste0(export.plot, date.c, " Classification.png")
 
         ggsave(filename = plot.filename, total.gg, width = 10, height = 8)
+      }
+
+      # ---------------------------------------------------------------------- #
+      ##### SUBSECTION: Model Performance #####
+      #'
+
+      {
+        # Model Performance
+        {
+          print(paste0(date.c, ": ML Model Performance"))
+
+          plot.filename <- paste0(export.plot.path, date.c, " ML Model Performance", " Experiment", ".png")
+
+          tmp <- ggplot(data.ls[[1]]$results, aes(x = C, y = Accuracy)) +
+            geom_point() +
+            geom_line(color = 'blue') +
+            theme_minimal()
+
+          ggsave(filename = plot.filename, tmp, width = 8, height = 6)
+        }
+
+        # Model Performance
+        {
+          print(paste0(date.c, ": PCA Model Performance"))
+
+          plot.filename <- paste0(export.plot.path, date.c, " PCA Model Performance", " Experiment", ".png")
+
+          tmp <- factoextra::fviz_pca_biplot(data.ls[[3]]) + factoextra::fviz_screeplot(data.ls[[3]])
+
+          ggsave(filename = plot.filename, tmp, width = 8, height = 6)
+        }
       }
 
       # ---------------------------------------------------------------------- #
@@ -760,20 +696,22 @@
           mutate(`Annotation` = if_else(`Temperature` > -38, (100*p_liquid(Temperature)/p_ice(Temperature))/100, Annotation)) %>%
           mutate(`Label` = if_else(`Temperature` > -38, "Water Saturation", "Homogeneous Freezing"))
 
-        gg1 <- ggplot(tmp.df, aes(y = `Depolarization`, x = after_stat(scaled), fill = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
-          geom_density(alpha = 0.4, adjust = 2.5) +
+        gg1 <- ggplot(tmp.df, aes(y = `Depolarization`, x = after_stat(scaled), fill = as.factor(`Lamina Breaks`), color = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
+          geom_density(alpha = 0.125, adjust = 2.5) +
           scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
           xlab(label = "Kernel Density Estimate (KDE)") +
-          scale_fill_manual(values = cbPalette) +
+          scale_fill_manual(values = c("#E69F00", "#999999", "#56B4E9", "#009E73")) +
+          scale_color_manual(values = c("#E69F00", "#999999", "#56B4E9", "#009E73")) +
+          annotate("text", y = 0.9, x = 0.9, label = "A", fontface = "bold", size = 6) +
           theme(panel.background = element_rect(fill = "white"),
                 plot.background = element_rect(fill = "white"),
                 panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
                 panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
                 panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
-                axis.title.x = element_text(vjust = -1),
-                axis.title.y = element_text(vjust = 2, size = 14),
+                axis.title.x = element_text(vjust = -1, size = 12),
+                axis.title.y = element_text(vjust = 2, size = 12),
                 axis.ticks.length = unit(2, "mm"),
                 axis.minor.ticks.length = unit(1, "mm"),
                 legend.title = element_blank(),
@@ -781,10 +719,9 @@
           coord_fixed()
 
         gg2 <- ggplot(tmp.df, aes(x = `Lamina S Ice`, y = `Depolarization`, color = as.factor(`Lamina Breaks`), group = `Lamina Breaks`)) +
-          annotate("rect", ymin = 0.4, ymax = 0.6, xmin = 1, xmax = 1.6, fill = "gray60", alpha = 0.2) +
-          annotate("text", y = 0.5, x = 1.05, label = "Ice") +
-          annotate("rect", ymin = 0.15, ymax = 0.4, xmin = 1, xmax = 1.6, fill = "gray80", alpha = 0.2) +
-          annotate("text", y = 0.275, x = 1.05, label = "Droplet") +
+          annotate("rect", ymin = 0.4, ymax = 1, xmin = 1, xmax = 1.6, fill = "gray90", alpha = 0.2) +
+          annotate("rect", ymin = 0.16, ymax = 0.4, xmin = 1, xmax = 1.6, fill = "gray60", alpha = 0.2) +
+          annotate("rect", ymin = 0, ymax = 0.2, xmin = 1, xmax = 1.6, fill = "white", alpha = 0.2) +
           geom_point(size = 0.01, alpha = 0.1) +
           geom_smooth(alpha = 0.5) +
           geom_vline(data = annotation.df, aes(xintercept = `Annotation`, col = as.factor(`Temperature`)), linetype = 2) +
@@ -793,14 +730,18 @@
           scale_x_continuous(breaks = seq(1, 1.6, 0.1), limits = c(1, 1.6), expand = c(0.001, 0.001)) +
           scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1), expand = c(0.001, 0.001)) +
           xlab(label = latex2exp::TeX(r'($S_{ice}$)')) +
-          scale_color_manual(values = cbPalette) +
+          scale_color_manual(values = c("#E69F00", "#999999", "#56B4E9", "#009E73")) +
+          annotate("text", y = 0.9, x = 1.55, label = "B", fontface = "bold", size = 6) +
+          annotate("text", y = 0.55, x = 1.025, label = "Ice", hjust = 0, size = 8/.pt) +
+          annotate("text", y = 0.35, x = 1.025, label = "Droplet", hjust = 0, size = 8/.pt) +
+          annotate("text", y = 0.11, x = 1.025, label = "Aerosol/Water Uptake", hjust = 0, size = 8/.pt) +
           theme(panel.background = element_rect(fill = "white"),
                 plot.background = element_rect(fill = "white"),
                 panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
                 panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
                 panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
                 axis.text.y = element_blank(),
-                axis.title.x = element_text(vjust = -2),
+                axis.title.x = element_text(vjust = -2, size = 12),
                 axis.title.y = element_blank(),
                 axis.ticks.length = unit(2, "mm"),
                 axis.minor.ticks.length = unit(1, "mm"),
@@ -809,10 +750,7 @@
           guides(color = "none") +
           coord_fixed(ratio = 1/1.6)
 
-        plot.gg <- (gg1 & theme(plot.tag.position  = c(.935, .96))) -
-          (gg2 & theme(plot.tag.position  = c(.785, .96))) +
-          plot_annotation(tag_levels = "a") +
-          plot_layout(guides = "collect") & theme(legend.position = "right")
+        plot.gg <- gg1 + gg2 + plot_layout(guides = "collect") & theme(legend.position = "right")
 
         ggsave(
           plot.filename,
@@ -820,303 +758,6 @@
           width = 10,
           height = 5,
           dpi = 300,
-          units = "in",
-          bg = "#ffffff"
-        )
-      }
-    }
-  }
-}
-
-      # ------------------------------------------------------------------------ #
-      ##### SUBSECTION: Correlation Plots #####
-      #'
-
-      {
-        print(paste0(date.c, ": Plotting Correlation Plots"))
-
-        variables.c <- c(bins.nm, "Lamina S Liquid", "Lamina S Ice",
-                         "Log S1", "Log P1", "Log P2", "Log Size", "Depolarization")
-
-        X1.df <- dataSPIN.df %>%
-          filter(`Class` == "Aerosol") %>%
-          select(all_of(variables.c))
-
-        X2.df <- dataSPIN.df %>%
-          filter(`Class` == "Ice") %>%
-          select(all_of(variables.c))
-
-        X3.df <- dataSPIN.df %>%
-          filter(`Class` == "Droplet") %>%
-          select(all_of(variables.c))
-
-        X4.df <- dataSPIN.df %>%
-          filter(`Class` == "Other") %>%
-          select(all_of(variables.c))
-
-        C1 <- cor(X1.df, use = "complete.obs")
-        C2 <- cor(X2.df, use = "complete.obs")
-        C3 <- cor(X3.df, use = "complete.obs")
-        C4 <- cor(X4.df, use = "complete.obs")
-
-        plot.filename = paste0(export.plot.path, date.c, " Correlation Matrices", " Experiment ", ID, ".pdf")
-
-        pdf(
-          file = plot.filename,
-          width = 10,
-          height = 10,
-          bg = "white"
-        )
-
-        margins = c(0.1, 1, 1, 1)
-
-        {
-          title.main = paste0("SPIN Correlation Matrix: ", date.c, " Experiment ", ID)
-          title.sub = "Aerosol"
-
-          corrplot::corrplot(C1, method = 'circle', cl.align.text = "l", type = "full", order = "original", diag = TRUE,
-                             tl.col = "black", tl.srt = 90, tl.cex = 1, cl.cex = 1, cl.offset = 0.1,
-                             tl.offset = 0.3, insig = "pch", mar = margins,
-                             na.label = "o", na.label.col = "black")
-
-          mtext(side = 3, line = 0, at = -0.07, adj = 0, cex = 1.5, title.main, family = 'Helvetica')
-          mtext(side = 3, line = -1.5, at = -0.07, adj = 0, cex = 1, title.sub)
-        }
-
-        {
-          title.main = paste0("SPIN Correlation Matrix: ", date.c, " Experiment ", ID)
-          title.sub = "Ice"
-
-          corrplot::corrplot(C2, method = 'circle', cl.align.text = "l", type = "full", order = "original", diag = TRUE,
-                             tl.col = "black", tl.srt = 90, tl.cex = 1, cl.cex = 1, cl.offset = 0.1,
-                             tl.offset = 0.3, insig = "pch", mar = margins,
-                             na.label = "o", na.label.col = "black")
-
-          mtext(side = 3, line = 0, at = -0.07, adj = 0, cex = 1.5, title.main, family = 'Helvetica')
-          mtext(side = 3, line = -1.5, at = -0.07, adj = 0, cex = 1, title.sub)
-        }
-
-        {
-          title.main = paste0("SPIN Correlation Matrix: ", date.c, " Experiment ", ID)
-          title.sub = "Droplet"
-
-          corrplot::corrplot(C3, method = 'circle', cl.align.text = "l", type = "full", order = "original", diag = TRUE,
-                             tl.col = "black", tl.srt = 90, tl.cex = 1, cl.cex = 1, cl.offset = 0.1,
-                             tl.offset = 0.3, insig = "pch", mar = margins,
-                             na.label = "o", na.label.col = "black")
-
-          mtext(side = 3, line = 0, at = -0.07, adj = 0, cex = 1.5, title.main, family = 'Helvetica')
-          mtext(side = 3, line = -1.5, at = -0.07, adj = 0, cex = 1, title.sub)
-        }
-
-        {
-          title.main = paste0("SPIN Correlation Matrix: ", date.c, " Experiment ", ID)
-          title.sub = "Other"
-
-          corrplot::corrplot(C4, method = 'circle', cl.align.text = "l", type = "full", order = "original", diag = TRUE,
-                             tl.col = "black", tl.srt = 90, tl.cex = 1, cl.cex = 1, cl.offset = 0.1,
-                             tl.offset = 0.3, insig = "pch", mar = margins,
-                             na.label = "o", na.label.col = "black")
-
-          mtext(side = 3, line = 0, at = -0.07, adj = 0, cex = 1.5, title.main, family = 'Helvetica')
-          mtext(side = 3, line = -1.5, at = -0.07, adj = 0, cex = 1, title.sub)
-        }
-
-        dev.off()
-      }
-
-      # ------------------------------------------------------------------------ #
-      ##### SUBSECTION: Probability Density of Uni-variate PBP Data #####
-      #'
-
-      {
-        print(paste0(date.c, ": Plotting Probability Density of Uni-variate PBP Data"))
-
-        {
-          D1.df <- X1.df %>%
-            mutate(`Index` = seq(1, n(), 1)) %>%
-            select("Index", "Log S1", "Log P1", "Log P2", "Log Size")
-
-          D2.df <- X2.df %>%
-            mutate(`Index` = seq(1, n(), 1)) %>%
-            select("Index", "Log S1", "Log P1", "Log P2", "Log Size")
-
-          D3.df <- X3.df %>%
-            mutate(`Index` = seq(1, n(), 1)) %>%
-            select("Index", "Log S1", "Log P1", "Log P2", "Log Size")
-
-          D4.df <- X4.df %>%
-            mutate(`Index` = seq(1, n(), 1)) %>%
-            select("Index", "Log S1", "Log P1", "Log P2", "Log Size")
-        }
-
-        x.breaks = pretty(c(-1, 5), 5)
-        x.lims = range(x.breaks)
-
-        plot.filename = paste0(export.plot.path, date.c, " PDFs", " Experiment ", ID, ".pdf")
-
-        pdf(
-          file = plot.filename,
-          width = 10,
-          height = 10,
-          bg = "white"
-        )
-
-        plot.list <- list()
-        {
-          title.main = paste0("Optical Particle Counter - Probability Density Functions: ", date.c, " Experiment ", ID)
-          title.sub = "Aerosol"
-
-          plot.list[[1]] <- density.histogram.png(title.main,
-                                                  title.sub,
-                                                  data = D1.df,
-                                                  index.vars = "Index",
-                                                  x.breaks,
-                                                  x.lims,
-                                                  plot.width = 10,
-                                                  plot.height = 8,
-                                                  plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = paste0("Optical Particle Counter - Probability Density Functions: ", date.c, " Experiment ", ID)
-          title.sub = "Ice"
-
-          plot.list[[2]] <- density.histogram.png(title.main,
-                                                  title.sub,
-                                                  data = D2.df,
-                                                  index.vars = "Index",
-                                                  x.breaks,
-                                                  x.lims,
-                                                  plot.width = 10,
-                                                  plot.height = 8,
-                                                  plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = paste0("Optical Particle Counter - Probability Density Functions: ", date.c, " Experiment ", ID)
-          title.sub = "Droplet"
-
-          plot.list[[3]] <- density.histogram.png(title.main,
-                                                  title.sub,
-                                                  data = D3.df,
-                                                  index.vars = "Index",
-                                                  x.breaks,
-                                                  x.lims,
-                                                  plot.width = 10,
-                                                  plot.height = 8,
-                                                  plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = paste0("Optical Particle Counter - Probability Density Functions: ", date.c, " Experiment ", ID)
-          title.sub = "Other"
-
-          plot.list[[4]] <- density.histogram.png(title.main,
-                                                  title.sub,
-                                                  data = D4.df,
-                                                  index.vars = "Index",
-                                                  x.breaks,
-                                                  x.lims,
-                                                  plot.width = 10,
-                                                  plot.height = 8,
-                                                  plot.resolution.dpi = 400)
-        }
-
-        invisible(lapply(plot.list, print))
-        dev.off()
-      }
-
-      # ------------------------------------------------------------------------ #
-      ##### SUBSECTION: Bivariate KDE Joint Probability Density #####
-      #'
-      #'
-
-      {
-        print(paste0(date.c, ": Plotting Bivariate KDE Joint Probability Density"))
-
-        {
-          title.main = ""
-          title.sub = "Aerosol"
-
-          gg1 <- density.contour.png(title.main,
-                                     title.sub,
-                                     data = X1.df,
-                                     binwidth.c = 0.05,
-                                     raster.n = 200,
-                                     plot.filename = NULL,
-                                     plot.width = 8,
-                                     plot.height = 8,
-                                     plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = ""
-          title.sub = "Ice"
-
-          gg2 <- density.contour.png(title.main,
-                                     title.sub,
-                                     data = X2.df,
-                                     binwidth.c = 0.05,
-                                     raster.n = 200,
-                                     plot.filename = NULL,
-                                     plot.width = 8,
-                                     plot.height = 8,
-                                     plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = ""
-          title.sub = "Droplet"
-
-          gg3 <- density.contour.png(title.main,
-                                     title.sub,
-                                     data = X3.df,
-                                     binwidth.c = 0.05,
-                                     raster.n = 200,
-                                     plot.filename = NULL,
-                                     plot.width = 8,
-                                     plot.height = 8,
-                                     plot.resolution.dpi = 400)
-        }
-
-        {
-          title.main = ""
-          title.sub = "Other"
-
-          gg4 <- density.contour.png(title.main,
-                                     title.sub,
-                                     data = X4.df,
-                                     binwidth.c = 0.05,
-                                     raster.n = 200,
-                                     plot.filename = NULL,
-                                     plot.width = 8,
-                                     plot.height = 8,
-                                     plot.resolution.dpi = 400)
-        }
-
-        plot.filename = paste0(export.plot.path, date.c, " OPC Joint PDFs", " Experiment ", ID, ".png")
-
-        plot.gg <- ggpubr::ggarrange(gg1 + rremove("ylab") + rremove("xlab"),
-                                     gg4 + rremove("ylab") + rremove("xlab"),
-                                     gg3 + rremove("ylab") + rremove("xlab"),
-                                     gg2 + rremove("ylab") + rremove("xlab"),
-                                     nrow = 2, ncol = 2,
-                                     widths = c(1, 1), common.legend = T, legend = "right",
-                                     labels = NULL)
-
-        plot.gg <-
-          annotate_figure(plot.gg,
-                          top = text_grob(paste0("Joint Probability Densities - 2D Gaussian KDE: ", date.c, " Experiment ", ID), size = 14),
-                          left = text_grob(latex2exp::TeX(r'($Depolarization$)', bold = F), rot = 90, size = 10),
-                          bottom = text_grob(latex2exp::TeX(r'($Log_{10}(Size)$)', bold = F), rot = 0, size = 10))
-
-        ggsave(
-          plot.filename,
-          plot.gg,
-          width = 12,
-          height = 10,
-          dpi = 400,
           units = "in",
           bg = "#ffffff"
         )
