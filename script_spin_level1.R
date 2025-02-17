@@ -313,6 +313,9 @@
             dataALL.df <- dataALL.df %>%
               filter(!is.na(`UTC Time`))
 
+            # Date string for plotting later
+            date.c <- unique(lubridate::as_date(dataALL.df$`UTC Time`))[1]
+
             # Find lamina breaks that segment dataset
             dataALL.df <- dataALL.df %>%
               mutate(`Lamina Breaks` = round(`Lamina Temp (C)`/50, 1)*50)
@@ -320,21 +323,56 @@
             # Calculate the depolarization ratio
             # Normalize values to be between 0 and 1 for standardization
             dataALL.df <- dataALL.df %>%
-              mutate(`Depolarization` = `S1`/(`P1` + `P2`)) %>%
-              mutate(`Depolarization` = if_else(Depolarization > 1, NA, Depolarization)) %>%
-              mutate(`Depolarization` = if_else(Depolarization < 0, NA, Depolarization)) %>%
-              filter(!is.na(`Depolarization`))
+              mutate(`Pseudo Depolarization` = `S1`/(`P1` + `P2`)) %>%
+              mutate(`Pseudo Depolarization` = if_else(`Pseudo Depolarization` > 1, NA, `Pseudo Depolarization`)) %>%
+              mutate(`Pseudo Depolarization` = if_else(`Pseudo Depolarization` < 0, NA, `Pseudo Depolarization`)) %>%
+              mutate(`Depolarization` = 2*`Pseudo Depolarization`) %>%
+              mutate(`Depolarization` = scales::rescale(`Depolarization`))
 
             # Scale the Log Size variable so it is between 0 and 1
             dataALL.df <- dataALL.df %>%
               mutate(`OPC Size` = scales::rescale(`Log Size`, to = c(0, 1)), .before = `Depolarization`)
 
+            # Remove NA values for depolarization as these particles should not be considered for analysis
+            dataALL.df <- dataALL.df %>%
+              filter(!is.na(`Depolarization`)) %>%
+              filter(!is.na(`Pseudo Depolarization`))
+
+            # Scaling necessary to convert from the raw depolarization uisng the sum to the proper equation with the mean
+            {
+              # Find the slope to match the new normalized data back to the original data
+              scaling.factor.ml <- lm(formula = `Pseudo Depolarization` ~ `Depolarization`, data = dataALL.df)
+
+              # Applying the linear regression correction factor
+              # This is simply a slope adjustment
+              dataALL.df <- dataALL.df %>%
+                mutate(`Depolarization` = `Depolarization`*coefficients(scaling.factor.ml)[2])
+
+              # Plot path
+              export.plot.path = paste0(export.plot, str_remove_all(date.c, '-'), "/")
+
+              plot.filename <- paste0(export.plot.path, date.c, " Depolarization Scaling.png")
+
+              corr.R = signif(cor(dataALL.df$`Pseudo Depolarization`, dataALL.df$`Depolarization`, use = "complete.obs"), 6)
+
+              label = paste0("R^2*' = '*", corr.R)
+
+              correlation.check.gg <- ggplot(dataALL.df, aes(x = `Pseudo Depolarization`, y = Depolarization)) +
+                geom_point(aes(x = `Pseudo Depolarization`, y = `Depolarization`/coefficients(scaling.factor.ml)[2], color = "Normalized")) +
+                geom_point(aes(x = `Pseudo Depolarization`, y = `Depolarization`, color = "Normalized/Scaled")) +
+                geom_abline(slope = 1) +
+                annotate("text", x = 0.05, y = 0.95, label = label, parse = T) +
+                labs(title = date.c, subtitle = "Scaling Conversion") +
+                theme_minimal() +
+                coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), clip = "on") +
+                theme(legend.title = element_blank())
+
+              ggsave(filename = plot.filename, correlation.check.gg, bg = "white")
+            }
+
             # Order columns
             dataALL.df <- dataALL.df %>%
               relocate(`S1`:`Depolarization`, .after = `Inlet Filter ON`)
-
-            # Date string for plotting later
-            date.c <- unique(lubridate::as_date(dataALL.df$`UTC Time`))[1]
 
             print(paste0(date.c, ": Data Aggregation Complete"))
 
@@ -342,6 +380,8 @@
             rm(dataBINS.df, rawPBP.df, rawSPIN.df)
             gc(verbose = F)
           }
+
+
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Filtering Data #####

@@ -1308,6 +1308,7 @@
             print(paste0("Plotting: ", plot.filename))
 
             particle.levelplot.png(data = tmp.df,
+                                   time.variable = NULL,
                                    title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
                                    subtitle = paste0("Particle Size Distribution: ", date.c, ", Experiment ", ID),
                                    col.palette = NULL,
@@ -1343,6 +1344,7 @@
                 print(paste0("Plotting: ", plot.filename))
 
                 particle.levelplot.png(data = tmp.df,
+                                       time.variable = NULL,
                                        title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
                                        subtitle = paste0("Particle Size Distribution: ", date.c, ", Experiment ", ID),
                                        col.palette = NULL,
