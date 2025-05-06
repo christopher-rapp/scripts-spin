@@ -22,6 +22,7 @@
   library(dplyr)
   library(stringr)
   library(tidyr)
+  library(zoo)
 
   # Plotting libraries
   library(ggplot2)
@@ -35,7 +36,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/Organosulfate Proxies")
+  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC Chamber Study/')
   work.dir <- getwd()
 
   # Instrument time zone
@@ -1095,6 +1096,8 @@
             end = start + 5*60
             remove.c <- append(remove.c, seq.POSIXt(start, end, by = "1 sec"))
           }
+        } else {
+          remove.c <- NULL
         }
 
         coldTCs.df <- coldTCs.df %>%

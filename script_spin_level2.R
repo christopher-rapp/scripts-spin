@@ -38,7 +38,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/Organosulfate Proxies")
+  setwd("~/Library/CloudStorage/Box-Box/BVOC Chamber Study")
   work.dir <- getwd()
 
   # Instrument time zone
@@ -100,7 +100,7 @@
 
       # Loop through SPIN files and read in
       # SPIN is exported using f.write which preserves time zone in the file
-      rawSPIN.df <- fread(x)
+      rawSPIN.df <- fread(file = x)
 
       # Filter data after an experimental ramp has started
       rawSPIN.df <- rawSPIN.df %>%
@@ -162,10 +162,12 @@
   dataSPIN.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated, function(x){
 
     # Select spin.dates from loop
-    date.c <- unique(as.Date(x$`Local Time`))
+    date.c <- first(unique(as.Date(x$`Local Time`)))
 
     # Find unique experiment ramp
     ID.c <- unique(x$`Experiment Ramp ID`)
+
+    print(date.c)
 
     # Export plot path
     export.plot.path = paste0(export.plot, stringr::str_remove_all(date.c, "-"), '/')
@@ -305,7 +307,7 @@
       export.df <- dataSPIN.ls[[i]]
 
       # Select spin.dates from loop
-      date.c <- unique(as.Date(export.df$`Local Time`))
+      date.c <- first(unique(as.Date(export.df$`Local Time`)))
 
       # Find unique experiment ramp
       ID.c <- unique(export.df$`Experiment Ramp ID`)

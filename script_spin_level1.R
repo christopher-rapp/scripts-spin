@@ -22,6 +22,8 @@
   library(dplyr)
   library(stringr)
   library(tidyr)
+  library(collapse)
+  library(purrr)
 
   # Plotting libraries
   library(ggplot2)
@@ -33,13 +35,14 @@
 
   # ML libraries
   library(caret)
+  library(factoextra)
 
   # Plotting parameters
   resolution.dpi = 400
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/Organosulfate Proxies")
+  setwd("~/Library/CloudStorage/Box-Box/BVOC Chamber Study/")
   work.dir <- getwd()
 
   # Instrument time zone
@@ -83,10 +86,10 @@
 ##### SECTION: Level 1 #####
 #'
 
-{
-  # Plotting on?
-  PLOT.ON = T
+# Plotting on?
+PLOT.ON = T
 
+{
   {
     # Set threshold for size total
     THRESHOLD.Dp.nm <- 2.5
@@ -98,25 +101,28 @@
       pct <- proc.time()
 
       {
-        print(paste0("Level 1 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
+        # File selection and pre-processing
+        {
+          print(paste0("Level 1 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
 
-        # Memory management
-        gc(verbose = F)
+          # Memory management
+          gc(verbose = F)
 
-        if (spin.dates[n] == "2024-01-24"){
-          next
-        }
+          if (spin.dates[n] == "2024-01-24"){
+            next
+          }
 
-        # List all SPIN files exported
-        files.spin <- list.files(
-          path = spin.path[n],
-          recursive = TRUE,
-          full.names = TRUE,
-          pattern = '*.csv'
-        )
+          # List all SPIN files exported
+          files.spin <- list.files(
+            path = spin.path[n],
+            recursive = TRUE,
+            full.names = TRUE,
+            pattern = '*.csv'
+          )
 
-        if (length(files.spin) != 3){
-          next
+          if (length(files.spin) != 3){
+            next
+          }
         }
 
         # -------------------------------------------------------------------- #
@@ -176,6 +182,10 @@
               filter(`UTC Time` >= sequence.ramps.tm[1]) %>%
               mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c)) %>%
               mutate(`Start Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
+
+            # The timestamp variable is sometimes converted to int64
+            # Reason is unknown
+            dataSPIN.df$Timestamp <- as.numeric(dataSPIN.df$Timestamp)
           }
 
           # ------------------------------------------------------------------ #
@@ -367,7 +377,7 @@
                 coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), clip = "on") +
                 theme(legend.title = element_blank())
 
-              ggsave(filename = plot.filename, correlation.check.gg, bg = "white")
+              ggsave(filename = plot.filename, correlation.check.gg, bg = "white", width = 7, height = 6)
             }
 
             # Order columns
@@ -377,11 +387,9 @@
             print(paste0(date.c, ": Data Aggregation Complete"))
 
             # Clean up memory
-            rm(dataBINS.df, rawPBP.df, rawSPIN.df)
+            rm(rawPBP.df, rawSPIN.df, correlation.check.gg, scaling.factor.ml, corr.R)
             gc(verbose = F)
           }
-
-
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Filtering Data #####
@@ -407,26 +415,73 @@
 
           # ------------------------------------------------------------------ #
           ##### SUBSECTION: Classification #####
+          # This needs to be performed on a experiment by experiment basis
+          # Days were two experiments were conducted need to be split for classification
 
           {
             print(paste0(date.c, ": Classification"))
 
-            # Apply classifier function
-            # See documentation for specifics
-            data.ls <- spin.classifier(data = dataALL.df,
-                                       c.logsize.aerosol = 0.125,
-                                       c.logsize.ice = 0.4,
-                                       c.depolarization.droplet = 0.16,
-                                       c.depolarization.ice = 0.4,
-                                       size.ice = 2.5,
-                                       size.all = 0,
-                                       processing.cores = 12)
+            # Split dataframe using base R functionality
+            tmp.ls <- split(dataALL.df, dataALL.df$`Experiment Ramp ID`)
 
-            # Retrieve original dataframe back from classifier
-            export.df <- data.ls[[1]]
+            # Loop through split dataframe and run classifier for each
+            data.ls <- NULL
+            index.ls <- NULL
+            for (i in 1:length(tmp.ls)){
 
-            # Export the model results including caret::train output, confusion matrix, and prcomp result
-            model.ls <- data.ls[2:4]
+              # Classifier with error control
+              {
+                SVM.break <<- FALSE
+
+                # Try applying the classifier
+                tryCatch(expr = {
+
+                  # Apply classifier function
+                  # See documentation for specifics
+                  data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                                                  c.logsize.aerosol = 0.125,
+                                                  c.logsize.ice = 0.4,
+                                                  c.depolarization.droplet = 0.16,
+                                                  c.depolarization.ice = 0.4,
+                                                  size.ice = 2.5,
+                                                  size.all = 0,
+                                                  processing.cores = 12)
+
+                  # Index keeping for experiments and dates
+                  data.ls[[i]] <- append(data.ls[[i]], list(date.c, unique(tmp.ls[[i]]$`Experiment Ramp ID`), "PASS"))
+
+                }, error = function(e){
+                  SVM.break <<- TRUE
+                })
+
+                # Stop code from continuing
+                if (SVM.break) {
+
+                  # Index keeping for experiments and dates
+                  data.ls[[i]] <- append(c(NA, NA, NA, NA), list(date.c, unique(tmp.ls[[i]]$`Experiment Ramp ID`), "FAIL"))
+
+                  next
+                }
+              }
+            }
+
+            # Remove any iterations at which there is a NA rather than a model run
+            tmp.ls <- compact(map(data.ls, 1))
+
+            if (all(is.na(map(tmp.ls, 1)))){
+
+              next
+            }
+
+            # Remove empty lists for merging if a failed experiment occured
+            tmp.ls <- tmp.ls[!is.na(tmp.ls)]
+
+            # Merge original dataframe back from classifier
+            export.df <- rbindlist(tmp.ls)
+
+            # Merge all model type data to a list while retaining structure
+            model.ls <- lapply(data.ls, "[", 2:7)
+
           }
         }
       }
@@ -462,7 +517,11 @@
         print(paste0(date.c, ', Elapsed Time (s) ', round((
           proc.time() - pct)[3], 2)))
       }
-    }
+    } # END LOOP
+
+    # Remove empty data runs
+    data.export.ls <- compact(data.export.ls)
+    model.export.ls <- compact(model.export.ls)
 
     # Backup data from current run for testing
     saveRDS(data.export.ls, file = paste0(export.data, "TMP.RDS"))
@@ -486,16 +545,19 @@
 
   if (PLOT.ON == T){
 
-    # Read back in looped data from above and filter empty data
-    data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
-    data.export.ls <- data.export.ls[which(lengths(data.export.ls) != 0)]
+    # # Read back in looped data from above and filter empty data
+    {
+      # Dataframes
+      data.export.ls <- readRDS(paste0(export.data, "TMP.RDS"))
+      data.export.ls <- data.export.ls[which(lengths(data.export.ls) != 0)]
 
-    # Read back in looped data from above and filter empty data
-    model.export.ls <- readRDS(paste0(export.data, "MOD.RDS"))
-    model.export.ls <- model.export.ls[which(lengths(model.export.ls) != 0)]
+      # Model results
+      model.export.ls <- readRDS(paste0(export.data, "MOD.RDS"))
+      model.export.ls <- model.export.ls[which(lengths(model.export.ls) != 0)]
+    }
 
     # This creates individual dataframes for each experiment
-    data.export.ls <- lapply(data.export.ls, function(x){
+    tmp.ls <- lapply(data.export.ls, function(x){
 
       result <- x %>%
         group_split(`Experiment Ramp ID`)
@@ -503,17 +565,30 @@
       return(result)
     })
 
-    # Flatten the lists to remove nested levels
-    data.export.ls <- purrr::list_flatten(data.export.ls)
+    # Flatten lists and remove failed model runs
+    {
+      data.ls <- flatten(tmp.ls)
+      model.ls <- flatten(model.export.ls)
+
+      # Filter failed models
+      model.ls <- model.ls[-which(map(model.ls, 6) == "FAIL")]
+    }
+
+    # Retrieve dates and experiment numbers
+    names.ch <- paste0(as.Date(unlist(map(model.ls, 4))), " ", unlist(map(model.ls, 5)))
+
+    # Rename lists
+    names(data.ls) <- names.ch
+    names(model.ls) <- names.ch
 
     # Start loop
-    for (n in 1:length(data.export.ls)){
+    for (n in 1:length(data.ls)){
 
       # Retrieve data from the list
-      dataSPIN.df <- data.export.ls[[n]]
+      dataSPIN.df <- data.ls[[n]]
 
       # Retrieve model data from the list
-      data.ls <- model.export.ls[[n]]
+      model <- model.ls[[n]]
 
       # Date string for plotting later
       date.c <- unique(lubridate::as_date(dataSPIN.df$`UTC Time`))[1]
@@ -699,12 +774,12 @@
 
           plot.filename <- paste0(export.plot.path, date.c, " ML Model Performance", " Experiment", ".png")
 
-          tmp <- ggplot(data.ls[[1]]$results, aes(x = C, y = Accuracy)) +
+          tmp <- ggplot(model[[1]]$results, aes(x = C, y = Accuracy)) +
             geom_point() +
             geom_line(color = 'blue') +
             theme_minimal()
 
-          ggsave(filename = plot.filename, tmp, width = 8, height = 6)
+          ggsave(filename = plot.filename, tmp, width = 8, height = 6, bg = "white")
         }
 
         # Model Performance
@@ -713,7 +788,7 @@
 
           plot.filename <- paste0(export.plot.path, date.c, " PCA Model Performance", " Experiment", ".png")
 
-          tmp <- factoextra::fviz_pca_biplot(data.ls[[3]]) + factoextra::fviz_screeplot(data.ls[[3]])
+          tmp <- factoextra::fviz_pca_biplot(model[[3]]) + factoextra::fviz_screeplot(model[[3]])
 
           ggsave(filename = plot.filename, tmp, width = 8, height = 6)
         }
