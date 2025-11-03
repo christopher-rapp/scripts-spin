@@ -1,0 +1,184 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+
+
+# -------------------------------------------------------------------- #
+        ##### SECTION: Export Data #####
+        #'
+        #'
+
+        {
+          df = export.df
+
+          cold.positions = which(str_detect(colnames(df), "C\\d+"))
+          warm.positions = which(str_detect(colnames(df), "W\\d+"))
+
+          cold <- df[, cold.positions[-16], with = F]
+          warm <- df[, warm.positions[-16], with = F]
+
+          lamina.positions <- df$`Lamina Centerline Ratio`
+
+          keep.c <- which(colnames(cold) %in% c("C3", "C4", "C7"))
+
+          cold <- cold[, keep.c, with = F]
+
+          cold <- rowMeans(cold)
+          warm <- rowMeans(warm)
+
+          SS.ice <- list()
+          for (i in 1:length(cold)){
+
+            cold.x <- cold[i]
+            warm.x <- warm[i]
+
+            lamina.ratio = lamina.positions[i]
+
+            # Warm wall to cold wall
+            # A lamina ratio of 0.65 is 6.5 mm from the warm wall
+            x.chamber = c(0, 1)
+            y.temperature = c(warm.x, cold.x)
+
+            # Linear interpolation
+            x.temperature = approx(x.chamber, y.temperature, xout = lamina.ratio, n = 100)$y
+
+            warm.ice = p_ice(warm.x)
+            cold.ice = p_ice(cold.x)
+
+            lamina.ice = approx(x.chamber, c(warm.ice, cold.ice), xout = lamina.ratio, n = 100)$y
+
+            SS.ice[[i]] = lamina.ice/p_ice(x.temperature)
+          }
+
+          tmp.df <- export.df %>%
+            mutate(`Lamina S Ice` = as.numeric(SS.ice)) %>%
+            filter(`Lamina Breaks` == -45)
+
+          tmp.df$`Total Size Ice` <- rescale(tmp.df$`Total Size Ice`)
+
+          {
+            FIT.break <<- F
+
+            tryCatch(expr = {
+              sigmoid.ls <- split(tmp.df, tmp.df$`Lamina Breaks`)
+
+              sigmoid.ls <- lapply(sigmoid.ls, function(x){
+
+                model <- nls(`Total Size Ice` ~ SSlogis(`Lamina S Ice`, Asym, xmid, scal), data = x)
+                mid.nm <- data.frame(`Lamina S Ice` = model$m$getAllPars()[[2]], `AF50` = model$m$getAllPars()[[1]]/2, `AF100` = model$m$getAllPars()[[1]], check.names = F)
+              })
+
+              annotation <- rbindlist(sigmoid.ls)
+              annotation$`Lamina Breaks` <- as.factor(names(sigmoid.ls))
+
+              annotation$`Lamina Breaks` <- sort(annotation$`Lamina Breaks`, decreasing = T)
+            }, error = function(e){FIT.break <<- T})
+           }
+
+
+
+          prediction <- predict(model, newdata = data.frame(x = seq(1, 1.8, length.out = nrow(export.df))))
+
+
+
+          homogeneous.onset <- homogeneous.freezing.solver(-45, 0.2, 60)
+
+          freezing.error.u = homogeneous.onset + (2.5*p_liquid(-45)/p_ice(-45) + 1)/100
+          freezing.error.l = homogeneous.onset - (2.5*p_liquid(-45)/p_ice(-45) + 1)/100
+
+          print(homogeneous.onset - annotation$`Lamina S Ice`)
+
+          ggplot(tmp.df, aes(x = `Lamina S Ice`, y = `Total Size Ice`, col = `Class`)) +
+            geom_point(alpha = 0.5, size = 0.5) +
+            ylab(label = latex2exp::TeX(r'(OPC Concentration ($D_p$ \geq 2.5 \mu{m}))')) +
+            scale_x_continuous(breaks = seq(1, 1.8, 0.1), limits = c(1, 1.8), minor_breaks = seq(1, 1.8, 0.025)) +
+            geom_smooth(
+              method = "nls",
+              formula = y ~ SSlogis(x, Asym, xmid, scal),
+              se = F, # Hide standard error
+              color = "black"
+            ) +
+            geom_ribbon(aes(xmin = freezing.error.l, xmax = freezing.error.u), color = NA, fill = "grey40", alpha = 0.25) +
+            geom_text(data = annotation, aes(x = 1.05, y = Inf, label = paste0("Onset = ", round(`Lamina S Ice`, 2))), inherit.aes = F,
+                      vjust = 4, hjust = 0, size = 3) +
+            scale_color_manual(values = c("Aerosol" = "#999999", "Water Uptake" = "#009E73", "Ice" = "#56B4E9", "Droplet" = "#E69F00")) +
+            facet_wrap(. ~ `Lamina Breaks`) +
+            geom_vline(xintercept = homogeneous.onset, color = "red") +
+            geom_vline(xintercept = annotation$`Lamina S Ice`, color = "black") +
+            theme_minimal()
+        }
+
+
+
+
+# ------------------------------------------------------------------ #
+        ##### SUBSECTION: Lamina Calculations #####
+
+        {
+          # Wall Setpoint Temperatures
+          warm = dataSPIN.df$`Warm Wall SP`
+          cold = dataSPIN.df$`Cold Wall SP`
+
+          # Calculate lamina position
+          lamina.positions <- dataSPIN.df$`Lamina Centerline Ratio`
+
+          lamina.calcs <- list("A" = rep(NA, length.out = nrow(dataSPIN.df)),
+                               "B" = rep(NA, length.out = nrow(dataSPIN.df)))
+
+          for (i in 1:length(cold)){
+
+            cold.x <- cold[i]
+            warm.x <- warm[i]
+
+            lamina.ratio = lamina.positions[i]
+
+            if (is.na(cold.x)){
+              next
+            }
+
+            if (is.na(warm.x)){
+
+              next
+            }
+
+            # Warm wall to cold wall
+            # A lamina ratio of 0.65 is 6.5 mm from the warm wall
+            x.chamber = c(0, 1)
+            y.temperature = c(warm.x, cold.x)
+
+            # Linear interpolation
+            lamina.temperature = approx(x.chamber, y.temperature, xout = lamina.ratio, n = 100)$y
+
+            warm.ice = p_ice(warm.x)
+            cold.ice = p_ice(cold.x)
+
+            lamina.ice = approx(x.chamber, c(warm.ice, cold.ice), xout = lamina.ratio, n = 100)$y
+
+            SS.ice = lamina.ice/p_ice(lamina.temperature)
+
+            lamina.calcs$A[[i]] <- round(lamina.temperature, 0)
+
+            lamina.calcs$B[[i]] <- SS.ice
+          }
+
+          dataSPIN.df$`Target Lamina Temperature` <- unlist(lamina.calcs$A)
+          dataSPIN.df$`Target Lamina S Ice` <- unlist(lamina.calcs$B)
+
+          plot(dataSPIN.df$`Target Lamina Temperature`)
+        }
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

@@ -36,7 +36,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC Chamber Study/')
+  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/')
   work.dir <- getwd()
 
   # Instrument time zone
@@ -73,7 +73,7 @@
   spin.dates <- as.Date(spin.dirs, format = '%Y%m%d')
 
   # Normal loop
-  for (n in 1:length(spin.dates)){
+  for (n in 30:length(spin.dates)){
 
     {
       print(paste0("Level 0 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
@@ -212,9 +212,9 @@
 
           # Loop through list of files and create a dataframe of each
           PbP.ls <- lapply(files.PbP, function(x) {
+
             # Use data.table's fread to read in data
             # Fastest method in reading CSV's and least memory consuming
-            # fill MUST equal FALSE with SPIN files
             tmp.df <- data.table::fread(
               paste0(x),
               na.strings = c("", "NA", "NaN"),
@@ -514,6 +514,13 @@
           {
             dataLAM.df <- rawSPIN.df %>%
               select(`Local Time`, all_of(indices.Lamina))
+
+            # Newer SPIN files have a different average lamina calculation
+            if (any(str_detect(colnames(dataLAM.df), "AvgColdTempLamina"))){
+
+              dataLAM.df <- dataLAM.df %>%
+                select(!str_which(colnames(dataLAM.df), "AvgColdTempLamina"))
+            }
 
             setnames(dataLAM.df,
                      old = colnames(dataLAM.df)[-1],
@@ -1120,10 +1127,10 @@
         }
 
         # Was an initial cooldown ever intiated? If so apply filter
-        if(length(which(dataSPIN.df$`Warm Wall SP` == -25)) != 0){
+        if(length(which(dataSPIN.df$`Warm Wall SP` <= -25)) != 0){
 
           # Time at which it is hit will be the same for cold and warm wall
-          start = dataSPIN.df$`Local Time`[first(which(dataSPIN.df$`Warm Wall SP` == -25))]
+          start = dataSPIN.df$`Local Time`[first(which(dataSPIN.df$`Warm Wall SP` <= -25))]
 
           coldTCs.df <- coldTCs.df %>%
             filter(`Local Time` > start)

@@ -38,7 +38,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/BVOC Chamber Study")
+  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC PAM Study/")
   work.dir <- getwd()
 
   # Instrument time zone
