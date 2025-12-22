@@ -42,7 +42,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/Purdue IEPOX/")
+  setwd("~/Library/CloudStorage/Box-Box/BVOC PAM Study/")
   work.dir <- getwd()
 
   # Instrument time zone
@@ -95,12 +95,14 @@ PLOT.ON = T
     THRESHOLD.Dp.nm <- 2.5
     data.export.ls <- NULL
     model.export.ls <- NULL
-    for (n in 34:length(spin.dates)){
+    for (n in 1:length(spin.dates)){
 
-      # Code Timing
-      pct <- proc.time()
+      # n = 31 for dust control
 
       {
+        # Code Timing
+        pct <- proc.time()
+
         # File selection and pre-processing
         {
           print(paste0("Level 1 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
@@ -438,15 +440,83 @@ PLOT.ON = T
 
                   # Apply classifier function
                   # See documentation for specifics
-                  data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
-                                                  c.logsize.aerosol = 0.125,
-                                                  c.logsize.ice = 0.4,
-                                                  c.logsize.droplet = 0.35,
-                                                  c.depolarization.droplet = c(0.16, 0.35),
-                                                  c.depolarization.ice = 0.4,
-                                                  size.ice = 2.5,
-                                                  size.all = 0,
-                                                  processing.cores = 12)
+                  # Needs to be adjusted based on particle type/size!
+
+                  # # SOA coated mineral dust
+                  # {
+                  #   # Set to false initially
+                  #   dust = F
+                  #
+                  #   if ((date.c %in% c("2025-09-11", "2025-09-18", "2025-09-19", "2025-09-24", "2025-10-03") && i == 2) | date.c == "2025-09-10"){
+                  #     dust = T
+                  #   }
+                  #
+                  #   if (date.c %in% c("2025-10-02") && (i %in% c(2,3))){
+                  #     dust = T
+                  #   }
+                  #
+                  #   if (date.c %in% c("2025-09-26") && (i %in% c(4,5))){
+                  #     dust = T
+                  #   }
+                  #
+                  #   if (dust){
+                  #
+                  #     data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                  #                                     c.logsize.aerosol = 0.20,
+                  #                                     c.logsize.droplet = 0.16,
+                  #                                     c.logsize.ice = 0.325,
+                  #                                     c.depolarization.aerosol = 0.325,
+                  #                                     c.depolarization.droplet = c(0.14, 0.325),
+                  #                                     c.depolarization.ice = 0.4,
+                  #                                     dust = T,
+                  #                                     size.ice = 2.5,
+                  #                                     size.all = 0,
+                  #                                     processing.cores = 12)
+                  #   } else {
+                  #
+                  #     data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                  #                                     c.logsize.aerosol = 0.125,
+                  #                                     c.logsize.droplet = 0.16,
+                  #                                     c.logsize.ice = 0.4,
+                  #                                     c.depolarization.aerosol = 0.16,
+                  #                                     c.depolarization.droplet = c(0.15, 0.325),
+                  #                                     c.depolarization.ice = 0.4,
+                  #                                     dust = F,
+                  #                                     size.ice = 2.5,
+                  #                                     size.all = 0,
+                  #                                     processing.cores = 12)
+                  #   }
+                  # }
+
+                  # SOA coated sulfate
+                  {
+                    data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                                                    c.logsize.aerosol = 0.125,
+                                                    c.logsize.ice = 0.4,
+                                                    c.logsize.droplet = 0.35,
+                                                    c.depolarization.aerosol = 0.16,
+                                                    c.depolarization.droplet = c(0.16, 0.35),
+                                                    c.depolarization.ice = 0.4,
+                                                    dust = F,
+                                                    size.ice = 2.5,
+                                                    size.all = 0,
+                                                    processing.cores = 12)
+                  }
+
+                  # # Proxy SOA
+                  # {
+                  #   data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                  #                                   c.logsize.aerosol = 0.125,
+                  #                                   c.logsize.ice = 0.4,
+                  #                                   c.logsize.droplet = 0.4,
+                  #                                   c.depolarization.aerosol = 0.16,
+                  #                                   c.depolarization.droplet = c(0.16, 0.4),
+                  #                                   c.depolarization.ice = 0.4,
+                  #                                   dust = F,
+                  #                                   size.ice = 2.5,
+                  #                                   size.all = 0,
+                  #                                   processing.cores = 12)
+                  # }
 
                   # Index keeping for experiments and dates
                   data.ls[[i]] <- append(data.ls[[i]], list(date.c, unique(tmp.ls[[i]]$`Experiment Ramp ID`), "PASS"))
@@ -486,6 +556,95 @@ PLOT.ON = T
           }
         }
       }
+
+      # # Testing
+      # z = 1
+      #
+      # data <- tmp.ls[[z]]
+      #
+      # depol <- ggplot(data, aes(x = `Lamina S Ice`, y = `Depolarization`, col = `ML Class`)) +
+      #   geom_point(size = 0.1, alpha = 0.5) +
+      #   scale_x_continuous(limits = c(1, 1.8), breaks = seq(1, 1.8, 0.1)) +
+      #   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+      #   labs(title = paste0(date.c, " ", z, " PCA-SVM Classification")) +
+      #   ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
+      #   theme(
+      #     plot.title = element_text(size = 10, hjust = 0.5),
+      #     plot.subtitle = element_text(color = "gray25"),
+      #     panel.background = element_rect(fill = "white"),
+      #     panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+      #     panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.border = element_rect(colour = "black", fill = NA),
+      #     axis.title.x = element_text(vjust = -1.5, size = 10),
+      #     axis.ticks.x = element_line(linewidth = 0.5),
+      #     axis.ticks.y = element_line(linewidth = 0.5),
+      #     axis.ticks.length = unit(1, "mm"),
+      #     legend.position = "bottom",
+      #     plot.margin = unit(c(0.2, 0.2, 0.25, -1), "cm"),
+      #     aspect.ratio = 1
+      #   ) + coord_cartesian(clip = "off") +
+      #   guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+      #
+      # ggExtra::ggMarginal(depol, groupColour = TRUE, groupFill = TRUE)
+      #
+      # size <- ggplot(data, aes(x = `Lamina S Ice`, y = `OPC Size`, col = `ML Class`)) +
+      #   geom_point(size = 0.1, alpha = 0.5) +
+      #   scale_x_continuous(limits = c(1, 1.8), breaks = seq(1, 1.8, 0.1)) +
+      #   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+      #   labs(title = paste0(date.c, " ", z, " PCA-SVM Classification")) +
+      #   ylab(label = "OPC Size") +
+      #   theme(
+      #     plot.title = element_text(size = 10, hjust = 0.5),
+      #     plot.subtitle = element_text(color = "gray25"),
+      #     panel.background = element_rect(fill = "white"),
+      #     panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+      #     panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.border = element_rect(colour = "black", fill = NA),
+      #     axis.title.x = element_text(vjust = -1.5, size = 10),
+      #     axis.ticks.x = element_line(linewidth = 0.5),
+      #     axis.ticks.y = element_line(linewidth = 0.5),
+      #     axis.ticks.length = unit(1, "mm"),
+      #     plot.margin = unit(c(0.2, 0.2, 0.25, -1), "cm"),
+      #     legend.position = "bottom",
+      #     aspect.ratio = 1
+      #   ) + coord_cartesian(clip = "off") +
+      #   guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+      #
+      # ggExtra::ggMarginal(size, groupColour = TRUE, groupFill = TRUE)
+      #
+      # scattering <- ggplot(data, aes(x = `OPC Size`, y = `Depolarization`, col = `ML Class`)) +
+      #   geom_point(size = 0.5, alpha = 0.2) +
+      #   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+      #   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+      #   labs(title = paste0(date.c, " ", z, " PCA-SVM Classification")) +
+      #   xlab(label = "OPC Size") +
+      #   ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
+      #   theme(
+      #     plot.title = element_text(size = 10, hjust = 0.5),
+      #     plot.subtitle = element_text(color = "gray25"),
+      #     panel.background = element_rect(fill = "white"),
+      #     panel.grid.major.x = element_line(colour = "gray90", linewidth = 0.1),
+      #     panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.grid.minor = element_line(colour = "grey80", linewidth = 0.1),
+      #     panel.border = element_rect(colour = "black", fill = NA),
+      #     axis.title.x = element_text(vjust = -1.5, size = 10),
+      #     axis.ticks.x = element_line(linewidth = 0.5),
+      #     axis.ticks.y = element_line(linewidth = 0.5),
+      #     axis.ticks.length = unit(1, "mm"),
+      #     plot.margin = unit(c(0.2, 0.2, 0.25, -1), "cm"),
+      #     aspect.ratio = 1
+      #   ) + coord_cartesian(clip = "off") +
+      #   guides(color = guide_legend(override.aes = list(size = 5, alpha = 1)))
+      #
+      # ggExtra::ggMarginal(scattering, groupColour = TRUE, groupFill = TRUE)
+      #
+      # ggplot(data, aes(x = `Lamina S Ice`, `Total Size Ice`, col = `ML Class`)) +
+      #   geom_point(size = 0.1, alpha = 0.5) +
+      #   scale_x_continuous(limits = c(1, 1.8), breaks = seq(1, 1.8, 0.1)) +
+      #   facet_wrap(~ `Lamina Breaks`)
+
 
       # ---------------------------------------------------------------------- #
       ##### SECTION: Export Data #####
@@ -690,6 +849,7 @@ PLOT.ON = T
               scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
               scale_color_manual(values = cbPalette) +
               labs(title = "Preliminary Classification") +
+              ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
               theme(
                 plot.title = element_text(size = 10, hjust = 0.5),
                 plot.subtitle = element_text(color = "gray25"),
@@ -743,6 +903,7 @@ PLOT.ON = T
               scale_x_continuous(limits = c(1, 1.7), breaks = seq(1, 1.7, 0.1)) +
               scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
               scale_color_manual(values = cbPalette) +
+              ylab(label = latex2exp::TeX(r'($\delta_{SPIN}$)')) +
               theme(
                 plot.title = element_text(),
                 plot.subtitle = element_text(color = "gray25"),

@@ -36,7 +36,8 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/')
+  # MUST BE CHANGED TO WORK
+  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/[L1FR] djcziczo/SPIN/Calibration/')
   work.dir <- getwd()
 
   # Instrument time zone
@@ -73,7 +74,7 @@
   spin.dates <- as.Date(spin.dirs, format = '%Y%m%d')
 
   # Normal loop
-  for (n in 30:length(spin.dates)){
+  for (n in 1:length(spin.dates)){
 
     {
       print(paste0("Level 0 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
