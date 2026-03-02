@@ -42,11 +42,8 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("~/Library/CloudStorage/Box-Box/BVOC PAM Study/")
+  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/")
   work.dir <- getwd()
-
-  # Instrument time zone
-  tz.c = "US/Eastern"
 
   #' @import
   #' Specify import directory
@@ -92,7 +89,7 @@ PLOT.ON = T
 {
   {
     # Set threshold for size total
-    THRESHOLD.Dp.nm <- 2.5
+    THRESHOLD.Dp.um <- 2.5
     data.export.ls <- NULL
     model.export.ls <- NULL
     for (n in 1:length(spin.dates)){
@@ -150,18 +147,19 @@ PLOT.ON = T
               rawSPIN.df <- data.ls[[which(lengths(data.ls) > 100)]]
             }
 
-            # Formatting time strings
-            dataLOG.df <- dataLOG.df %>%
-              mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
-
             # Retrieve experiment start time from LOG file
             sequence.ramps.tm = dataLOG.df$`UTC Time`[str_which(dataLOG.df$Message, "Starting Sequence Update SPs from Ramp.")]
+
+            # Try to use evaporation setpoint if the log file is missing
+            if (length(sequence.ramps.tm) < 1){
+              sequence.ramps.tm <- rawSPIN.df$`UTC Time`[first(which(rawSPIN.df$`Evaporation SP` < 20))]
+            }
 
             # Skip loops with no ramp (indicating experiment never started)
             {
               ramp.break <<- FALSE
 
-              tryCatch(if (length(sequence.ramps.tm) < 1) {stop("Error")},
+              tryCatch(if (length(sequence.ramps.tm) < 1 || any(is.na(sequence.ramps.tm))) {stop("Error")},
                        error = function(e) {ramp.break <<- TRUE})
 
               # Stop code from continuing if there are no ramps detected which means the dataset will be empty and continue to throw errors
@@ -181,9 +179,7 @@ PLOT.ON = T
 
             # Filter data after an experimental ramp has started
             dataSPIN.df <- rawSPIN.df %>%
-              filter(`UTC Time` >= sequence.ramps.tm[1]) %>%
-              mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c)) %>%
-              mutate(`Start Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
+              filter(`UTC Time` >= sequence.ramps.tm[1])
 
             # The timestamp variable is sometimes converted to int64
             # Reason is unknown
@@ -208,7 +204,7 @@ PLOT.ON = T
             ##### SUBSECTION: Background Removal #####
             {
               # Considering ice as this cutoff size (um) or larger
-              cutoff.bins.nm <- bins.nm[which(as.numeric(bins.nm) >= THRESHOLD.Dp.nm)]
+              cutoff.bins.nm <- bins.nm[which(as.numeric(bins.nm) >= THRESHOLD.Dp.um)]
 
               # Calculate total particle density larger than cutoff
               tmp.df <- dataBINS.df %>%
@@ -255,7 +251,6 @@ PLOT.ON = T
             dataSPIN.df <- dataSPIN.df %>%
               select(!all_of(bins.ix)) %>%
               cbind(dataBINS.df) %>%
-              mutate(`Size Threshold` = THRESHOLD.Dp.nm) %>%
               mutate(`Units` = "n/cc") %>%
               relocate(all_of(bins.nm), .before = "Units") %>%
               relocate(c(`Total Size Ice`, `Total Background`), .after = `Units`)
@@ -442,66 +437,71 @@ PLOT.ON = T
                   # See documentation for specifics
                   # Needs to be adjusted based on particle type/size!
 
-                  # # SOA coated mineral dust
-                  # {
-                  #   # Set to false initially
-                  #   dust = F
-                  #
-                  #   if ((date.c %in% c("2025-09-11", "2025-09-18", "2025-09-19", "2025-09-24", "2025-10-03") && i == 2) | date.c == "2025-09-10"){
-                  #     dust = T
-                  #   }
-                  #
-                  #   if (date.c %in% c("2025-10-02") && (i %in% c(2,3))){
-                  #     dust = T
-                  #   }
-                  #
-                  #   if (date.c %in% c("2025-09-26") && (i %in% c(4,5))){
-                  #     dust = T
-                  #   }
-                  #
-                  #   if (dust){
-                  #
-                  #     data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
-                  #                                     c.logsize.aerosol = 0.20,
-                  #                                     c.logsize.droplet = 0.16,
-                  #                                     c.logsize.ice = 0.325,
-                  #                                     c.depolarization.aerosol = 0.325,
-                  #                                     c.depolarization.droplet = c(0.14, 0.325),
-                  #                                     c.depolarization.ice = 0.4,
-                  #                                     dust = T,
-                  #                                     size.ice = 2.5,
-                  #                                     size.all = 0,
-                  #                                     processing.cores = 12)
-                  #   } else {
-                  #
-                  #     data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
-                  #                                     c.logsize.aerosol = 0.125,
-                  #                                     c.logsize.droplet = 0.16,
-                  #                                     c.logsize.ice = 0.4,
-                  #                                     c.depolarization.aerosol = 0.16,
-                  #                                     c.depolarization.droplet = c(0.15, 0.325),
-                  #                                     c.depolarization.ice = 0.4,
-                  #                                     dust = F,
-                  #                                     size.ice = 2.5,
-                  #                                     size.all = 0,
-                  #                                     processing.cores = 12)
-                  #   }
-                  # }
-
-                  # SOA coated sulfate
+                  # SOA coated mineral dust
                   {
-                    data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
-                                                    c.logsize.aerosol = 0.125,
-                                                    c.logsize.ice = 0.4,
-                                                    c.logsize.droplet = 0.35,
-                                                    c.depolarization.aerosol = 0.16,
-                                                    c.depolarization.droplet = c(0.16, 0.35),
-                                                    c.depolarization.ice = 0.4,
-                                                    dust = F,
-                                                    size.ice = 2.5,
-                                                    size.all = 0,
-                                                    processing.cores = 12)
+                    # Set to false initially
+                    dust = F
+
+                    if ((date.c %in% c("2025-09-11", "2025-09-18", "2025-09-19", "2025-09-24", "2025-10-03") && i == 2) | date.c == "2025-09-10"){
+                      dust = T
+                    }
+
+                    if (date.c %in% c("2025-10-02") && (i %in% c(2,3))){
+                      dust = T
+                    }
+
+                    if (date.c %in% c("2025-09-26") && (i %in% c(4,5))){
+                      dust = T
+                    }
+
+                    if (date.c %in% c("2026-02-26") && (i %in% c(4,5))){
+                      dust = T
+                      THRESHOLD.Dp.um <- 5
+                    }
+
+                    if (dust){
+
+                      data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                                                      c.logsize.aerosol = 0.20,
+                                                      c.logsize.droplet = 0.16,
+                                                      c.logsize.ice = 0.325,
+                                                      c.depolarization.aerosol = 0.325,
+                                                      c.depolarization.droplet = c(0.14, 0.325),
+                                                      c.depolarization.ice = 0.4,
+                                                      dust = T,
+                                                      size.ice = THRESHOLD.Dp.um,
+                                                      size.all = 0,
+                                                      processing.cores = 12)
+                    } else {
+
+                      data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                                                      c.logsize.aerosol = 0.125,
+                                                      c.logsize.droplet = 0.16,
+                                                      c.logsize.ice = 0.4,
+                                                      c.depolarization.aerosol = 0.16,
+                                                      c.depolarization.droplet = c(0.15, 0.325),
+                                                      c.depolarization.ice = 0.4,
+                                                      dust = THRESHOLD.Dp.um,
+                                                      size.ice = 2.5,
+                                                      size.all = 0,
+                                                      processing.cores = 12)
+                    }
                   }
+
+                  # # SOA coated sulfate
+                  # {
+                  #   data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
+                  #                                   c.logsize.aerosol = 0.125,
+                  #                                   c.logsize.ice = 0.4,
+                  #                                   c.logsize.droplet = 0.35,
+                  #                                   c.depolarization.aerosol = 0.16,
+                  #                                   c.depolarization.droplet = c(0.16, 0.35),
+                  #                                   c.depolarization.ice = 0.4,
+                  #                                   dust = F,
+                  #                                   size.ice = 2.5,
+                  #                                   size.all = 0,
+                  #                                   processing.cores = 12)
+                  # }
 
                   # # Proxy SOA
                   # {
@@ -548,11 +548,11 @@ PLOT.ON = T
             tmp.ls <- tmp.ls[!is.na(tmp.ls)]
 
             # Merge original dataframe back from classifier
-            export.df <- rbindlist(tmp.ls)
+            export.df <- rbindlist(tmp.ls) %>%
+              mutate(`Size Threshold` = THRESHOLD.Dp.um)
 
             # Merge all model type data to a list while retaining structure
             model.ls <- lapply(data.ls, "[", 2:7)
-
           }
         }
       }
@@ -761,7 +761,7 @@ PLOT.ON = T
         model <- model.ls[[n]]
 
         # Date string for plotting later
-        date.c <- unique(lubridate::as_date(dataSPIN.df$`UTC Time`))[1]
+        date.c <- unique(lubridate::as_date(dataSPIN.df$`Local Time`))[1]
 
         # Experiment ID
         ID <- unique(dataSPIN.df$`Experiment Ramp ID`)
@@ -1127,7 +1127,7 @@ PLOT.ON = T
             filter(`Total Size Ice` != 9999)
         }
 
-        if (all(quantile(tmp.df$`Lamina S Ice`) < 1.05)){
+        if (all(quantile(tmp.df$`Lamina S Ice`) < 1.05) || nrow(tmp.df) == 0){
           next
         }
 
@@ -1209,3 +1209,11 @@ PLOT.ON = T
   }
 }
 
+lamina.ls <- lamina.correction(export.df, thermocouples = c("C3", "C4", "C7", "C8", "C9", "C10", "C11", "C12", "C13", "C14"))
+
+tmp.df$`Lamina S Ice` <- as.numeric(lamina.ls$SS.ice)
+
+plot(diff(export.df$`Lamina S Ice` - as.numeric(lamina.ls$SS.ice)))
+
+plot(export.df$`Lamina S Ice`, (export.df$`Total Size Ice`/200)*100)
+abline(h = 1)

@@ -38,11 +38,8 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC PAM Study/")
+  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC Chamber Study/")
   work.dir <- getwd()
-
-  # Instrument time zone
-  tz.c = "US/Eastern"
 
   #' @import
   #' Specify import directory
@@ -102,11 +99,6 @@
       # SPIN is exported using f.write which preserves time zone in the file
       rawSPIN.df <- fread(file = x)
 
-      # Filter data after an experimental ramp has started
-      rawSPIN.df <- rawSPIN.df %>%
-        mutate(`Local Time` = lubridate::with_tz(`Local Time`, tzone = tz.c)) %>%
-        mutate(`Start Time` = lubridate::with_tz(`Local Time`, tzone = tz.c))
-
       # Set lamina breaks to a factor
       dataSPIN.df <- rawSPIN.df %>%
         mutate(`Lamina Breaks` = as.factor(`Lamina Breaks`)) %>%
@@ -159,7 +151,7 @@
 
   print(paste0("Chamber Analysis"))
 
-  dataSPIN.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated, function(x){
+  dataSPIN.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated - 2, function(x){
 
     # Select spin.dates from loop
     date.c <- first(unique(as.Date(x$`Local Time`)))

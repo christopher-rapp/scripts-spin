@@ -37,11 +37,8 @@
 
   # Set working directory
   # MUST BE CHANGED TO WORK
-  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/[L1FR] djcziczo/SPIN/Calibration/')
+  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/')
   work.dir <- getwd()
-
-  # Instrument time zone
-  tz.c = "US/Eastern"
 
   #' @import
   #' Specify import directory
@@ -78,6 +75,19 @@
 
     {
       print(paste0("Level 0 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
+
+      # Use experiment days for chamber measurements to fix timezones
+      if (spin.dates[n] >= as.Date("240709", format = "%y%m%d") &
+          spin.dates[n] <= as.Date("240727", format = "%y%m%d")) {
+
+        tz.c = "US/Central"
+      } else {
+
+        # Instrument time zone
+        tz.c = "US/Eastern"
+      }
+
+      print(paste0("Time zone in use: ", tz.c))
 
       # Memory management
       gc(verbose = F)
@@ -320,7 +330,7 @@
           rawSPIN.df$`Duration (s)` <- rawSPIN.df$`Duration (s)` - (first(rawSPIN.df$`Duration (s)`) - 1)
 
           # Generate a string containing the date for plotting
-          date.c = unique(force_tz(as_date(rawSPIN.df$`Local Time`), 'America/New_York'))[1]
+          date.c = unique(force_tz(as_date(rawSPIN.df$`Local Time`), tz.c))[1]
 
           #' Check if there is real data for the day
           #' If the compressor RPM is strictly zero, the instrument never entered
