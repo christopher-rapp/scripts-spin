@@ -26,10 +26,9 @@
 
   # Plotting libraries
   library(ggplot2)
-  library(ggpubr)
-  library(ggsci)
   library(viridis)
   library(RColorBrewer)
+  library(ggpubr)
 
   # Plotting parameters
   resolution.dpi = 400
@@ -37,7 +36,7 @@
 
   # Set working directory
   # MUST BE CHANGED TO WORK
-  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/')
+  setwd('/Users/christopherrapp/Library/CloudStorage/Box-Box/AFRICAN DUST/')
   work.dir <- getwd()
 
   #' @import
@@ -71,7 +70,7 @@
   spin.dates <- as.Date(spin.dirs, format = '%Y%m%d')
 
   # Normal loop
-  for (n in 1:length(spin.dates)){
+  for (n in 9:length(spin.dates)){
 
     {
       print(paste0("Level 0 SPIN Data for ", spin.dates[n], " from directory ", spin.path[n]))
@@ -1405,3 +1404,4 @@
     } # END LOOP
   }
 }
+

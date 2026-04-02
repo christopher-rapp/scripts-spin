@@ -38,7 +38,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC Chamber Study/")
+  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/BVOC PAM Study/")
   work.dir <- getwd()
 
   #' @import
@@ -127,10 +127,10 @@
   {
     print(paste0("Lamina Error Analysis"))
 
-    dataSPIN.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated, function(x){
+    dataSPIN.ls <- lapply(dataSPIN.ls, function(x){
 
       # Calculate error propagation
-      error.df <- lamina.error(x, position.error = T)
+      error.df <- lamina.error.V3(x, position.error = T)
 
       # Add calculated error propagation values
       data.df <- cbind(x, error.df) %>%
@@ -149,154 +149,195 @@
   #' Thermocouple pair by pair comparison of expected lamina conditions
   #
 
-  print(paste0("Chamber Analysis"))
-
-  dataSPIN.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated - 2, function(x){
-
-    # Select spin.dates from loop
-    date.c <- first(unique(as.Date(x$`Local Time`)))
-
-    # Find unique experiment ramp
-    ID.c <- unique(x$`Experiment Ramp ID`)
-
-    print(date.c)
-
-    # Export plot path
-    export.plot.path = paste0(export.plot, stringr::str_remove_all(date.c, "-"), '/')
+  {
+    print(paste0("Chamber Analysis"))
 
     # Smallest diameter that could be a heterogeneous ice nuclei from Vali
     r_um = 0.1
 
-    # Run lamina conditions function on the chamber wall thermocouples.
-    # Outputs a list of length 3
-    # List 1 - Lamina S ice
-    # List 2 - Lamina S liquid
-    # List 3 - Homogeneous Freezing Thresholds
-    tmp.ls <- lamina.conditions(x, x$`Lamina Centerline Ratio`, r_um = 0.1, t = 60)
+    lamina.ls <- mclapply(dataSPIN.ls, mc.cores = CORES.dedicated, function(x){
 
-    # Find difference in predicted lamina s ice compared to each thermocouple
-    tmp.df <- cbind("UTC Time" = tmp.ls[[1]][, 1], tmp.ls[[1]][, 2:17] - x$`Lamina S Ice`)
+      # Select spin.dates from loop
+      date.c <- first(unique(as.Date(x$`Local Time`)))
 
-    caption1.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
-                          i.e. C7 & W7. Conditions are generated using a linear interpolation of
-                          saturation vapor pressures and temperatures per thermocouple for each
-                          experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
-                          Distances assumed to be 10 mm and neglecting change due to ice surface.
-                          Values are selected from interpolation vector by using the
-                          calculated lamina position as extended by Rogers (1988). This position is
-                          designated specifically for centerline thermocouples
-                          T0, T3, T6, T9, T12 but extended to the entire chamber to locate any
-                          inhomogeneities. Gray hollow circles mark the expected homogeneous freezing
-                          threshold as detailed by Koop (2002) for ", r_um ," \U00B5m particles at the
-                          linearly interpolated lamina temperature.")
+      # Find unique experiment ramp
+      ID.c <- unique(x$`Experiment Ramp ID`)
 
-    caption2.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
-                          i.e. C7 & W7. Conditions are generated using a linear interpolation of
-                          saturation vapor pressures and temperatures per thermocouple for each
-                          experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
-                          Distances assumed to be 10 mm and neglecting change due to ice surface.
-                          Values are selected from interpolation vector by using the
-                          calculated lamina position as extended by Rogers (1988). This position is
-                          designated specifically for centerline thermocouples
-                          T0, T3, T6, T9, T12 but extended to the entire chamber to locate any
-                          inhomogeneities.")
+      print(date.c)
 
-    caption3.c = paste0("Difference between ice supersaturations derived from
-                           individually paired cold-warm wall thermocouples
-                           and reported SPIN lamina conditions. Lower supersaturation
-                           values at the bottom of the chamber e.g. T12 - T15 are due
-                           to the droplet evaporation section.")
+      # Export plot path
+      export.plot.path = paste0(export.plot, stringr::str_remove_all(date.c, "-"), '/')
 
-    # Chamber ice saturation
-    chamber.contour.png(data = tmp.ls[[1]],
-                        data2 = tmp.ls[[3]],
-                        title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                        subtitle = paste0("Chamber Ice Saturation: ", date.c),
-                        title.key = latex2exp::TeX(r'($S_{ice}$)', bold = T),
-                        levels.limits = c(1, 2),
-                        col.palette = NULL,
-                        n.colors = 20,
-                        plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Saturation Experiment ', ID.c, '.png'),
-                        plot.width = 12,
-                        plot.height = 6,
-                        plot.resolution.dpi = 600,
-                        caption = caption1.c)
+      # Run lamina conditions function on the chamber wall thermocouples.
+      # Outputs a list of length 3
+      # List 1 - Lamina S ice
+      # List 2 - Lamina S liquid
+      # List 3 - Homogeneous Freezing Thresholds
+      tmp.ls <- lamina.conditions.V2(x, x$`Lamina Centerline Ratio`, r_um = 0.1, t = 60)
 
-    # Chamber liquid saturation
-    chamber.contour.png(data = tmp.ls[[2]],
-                        data2 = NULL,
-                        title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                        subtitle = paste0("Chamber Liquid Saturation: ", date.c),
-                        title.key = latex2exp::TeX(r'($S_{liq}$)', bold = T),
-                        levels.limits = c(0.5, 1.5),
-                        n.colors = 20,
-                        col.palette = NULL,
-                        plot.filename = paste0(export.plot.path, date.c, ' Chamber Liquid Saturation Experiment ', ID.c, '.png'),
-                        plot.width = 12,
-                        plot.height = 6,
-                        plot.resolution.dpi = 600,
-                        caption = caption2.c)
+      # Find difference in predicted lamina s ice compared to each thermocouple
+      tmp1 <- tmp.ls[[1]][["UTC Time"]]
+      tmp2 <- as.matrix(tmp.ls[[1]][, 2:17, drop = FALSE])
+      tmp3 <- x$`Lamina S Ice`
 
-    # Chamber Observed Ice Saturation Difference
-    chamber.contour.png(data = tmp.df,
-                        data2 = NULL,
-                        title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
-                        subtitle = paste0("Chamber Observed Ice Saturation Difference: ", date.c),
-                        title.key = latex2exp::TeX(r'($\Delta S_{ice}$)', bold = T),
-                        levels.limits = c(-0.4, 0.4),
-                        col.palette = c(rev(RColorBrewer::brewer.pal(7, 'Reds')), "white", "white", RColorBrewer::brewer.pal(7, 'Blues')),
-                        n.colors = NULL,
-                        plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Difference Experiment ', ID.c, '.png'),
-                        plot.width = 12,
-                        plot.height = 6,
-                        plot.resolution.dpi = 600,
-                        caption = caption3.c)
+      diff.df <- as.data.frame(
+        sweep(tmp2, 1, tmp3, FUN = "-"),
+        check.names = FALSE
+      )
 
-    # ICE
-    {
-      # Only keep the first 13 thermcouples
-      tmp.df <- tmp.ls[[1]][, c(2:14)]
+      # Reset names for plotting later
+      names(diff.df) <- colnames(tmp2)
 
-      # Change names from simple numeric labels
-      setnames(tmp.df, new = paste0("S Ice Pair ", colnames(tmp.df)))
+      # Create dataframe
+      tmp.df <- data.frame(
+        "UTC Time" = tmp1,
+        diff.df,
+        check.names = FALSE
+      )
 
-      # Find the maximum S for each row
-      tmp.df$`Maximum S Ice` <- apply(tmp.df, 1, max)
+      # List to return containing all the information needed
+      return(list(date.c, ID.c, export.plot.path, tmp.ls, tmp.df))
+    })
 
-      # Merge
-      data.df <- cbind(x, tmp.df) %>%
-        relocate(all_of(colnames(tmp.df)), .before = `Timestamp`) %>%
-        relocate(`Maximum S Ice`, .before = `Lamina Position`)
+    tmp.ls <- mclapply(lamina.ls, mc.cores = CORES.dedicated, function(x){
+
+      date.c <- x[[1]]
+      ID.c <- x[[2]]
+      export.plot.path <- x[[3]]
+      tmp.ls <- x[[4]]
+      tmp.df <- x[[5]]
+
+      print(date.c)
+
+
+      caption1.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
+                            i.e. C7 & W7. Conditions are generated using a linear interpolation of
+                            saturation vapor pressures and temperatures per thermocouple for each
+                            experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
+                            Distances assumed to be 10 mm and neglecting change due to ice surface.
+                            Values are selected from interpolation vector by using the
+                            calculated lamina position as extended by Rogers (1988). This position is
+                            designated specifically for centerline thermocouples
+                            T0, T3, T6, T9, T12 but extended to the entire chamber to locate any
+                            inhomogeneities. Gray hollow circles mark the expected homogeneous freezing
+                            threshold as detailed by Koop (2002) for ", r_um ," \U00B5m particles at the
+                            linearly interpolated lamina temperature.")
+
+      caption2.c = paste0("SPIN chamber conditions using paired cold-warm wall thermocouples
+                            i.e. C7 & W7. Conditions are generated using a linear interpolation of
+                            saturation vapor pressures and temperatures per thermocouple for each
+                            experiment time step. Vapor pressure calculations performed as described by Murphy and Koop (2005).
+                            Distances assumed to be 10 mm and neglecting change due to ice surface.
+                            Values are selected from interpolation vector by using the
+                            calculated lamina position as extended by Rogers (1988). This position is
+                            designated specifically for centerline thermocouples
+                            T0, T3, T6, T9, T12 but extended to the entire chamber to locate any
+                            inhomogeneities.")
+
+      caption3.c = paste0("Difference between ice supersaturations derived from
+                             individually paired cold-warm wall thermocouples
+                             and reported SPIN lamina conditions. Lower supersaturation
+                             values at the bottom of the chamber e.g. T12 - T15 are due
+                             to the droplet evaporation section.")
+
+      # Chamber ice saturation
+      chamber.contour.png(data = tmp.ls[[1]],
+                          data2 = tmp.ls[[3]],
+                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                          subtitle = paste0("Chamber Ice Saturation: ", date.c),
+                          title.key = latex2exp::TeX(r'($S_{ice}$)', bold = T),
+                          levels.limits = c(1, 2),
+                          col.palette = NULL,
+                          n.colors = 20,
+                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Saturation Experiment ', ID.c, '.png'),
+                          plot.width = 12,
+                          plot.height = 6,
+                          plot.resolution.dpi = 600,
+                          caption = caption1.c)
+
+      # Chamber liquid saturation
+      chamber.contour.png(data = tmp.ls[[2]],
+                          data2 = NULL,
+                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                          subtitle = paste0("Chamber Liquid Saturation: ", date.c),
+                          title.key = latex2exp::TeX(r'($S_{liq}$)', bold = T),
+                          levels.limits = c(0.5, 1.5),
+                          n.colors = 20,
+                          col.palette = NULL,
+                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Liquid Saturation Experiment ', ID.c, '.png'),
+                          plot.width = 12,
+                          plot.height = 6,
+                          plot.resolution.dpi = 600,
+                          caption = caption2.c)
+
+      # Chamber Observed Ice Saturation Difference
+      chamber.contour.png(data = tmp.df,
+                          data2 = NULL,
+                          title = paste0("Spectrometer for Ice Nucleation (SPIN)"),
+                          subtitle = paste0("Chamber Observed Ice Saturation Difference: ", date.c),
+                          title.key = latex2exp::TeX(r'($\Delta S_{ice}$)', bold = T),
+                          levels.limits = c(-0.4, 0.4),
+                          col.palette = c(rev(RColorBrewer::brewer.pal(7, 'Reds')), "white", "white", RColorBrewer::brewer.pal(7, 'Blues')),
+                          n.colors = NULL,
+                          plot.filename = paste0(export.plot.path, date.c, ' Chamber Ice Difference Experiment ', ID.c, '.png'),
+                          plot.width = 12,
+                          plot.height = 6,
+                          plot.resolution.dpi = 600,
+                          caption = caption3.c)
+    })
+
+    export.ls <- list()
+    for (i in 1:length(dataSPIN.ls)){
+
+      x = dataSPIN.ls[[i]]
+      tmp.ls <- lamina.ls[[i]][[4]]
+
+      # ICE
+      {
+        # Only keep the first 13 thermcouples
+        tmp.df <- tmp.ls[[1]][, c(2:14)]
+
+        # Change names from simple numeric labels
+        setnames(tmp.df, new = paste0("S Ice Pair ", colnames(tmp.df)))
+
+        # Find the maximum S for each row
+        tmp.df$`Maximum S Ice` <- apply(tmp.df, 1, max)
+
+        # Merge
+        data.df <- cbind(x, tmp.df) %>%
+          relocate(all_of(colnames(tmp.df)), .before = `Timestamp`) %>%
+          relocate(`Maximum S Ice`, .before = `Lamina Position`)
+      }
+
+      # LIQUID
+      {
+        # Only keep the first 13 thermcouples
+        tmp.df <- tmp.ls[[2]][, c(2:14)]
+
+        # Change names from simple numeric labels
+        setnames(tmp.df, new = paste0("S Liq Pair ", colnames(tmp.df)))
+
+        # Find the maximum S for each row
+        tmp.df$`Maximum S Liq` <- apply(tmp.df, 1, max)
+
+        # Merge
+        data.df <- cbind(data.df, tmp.df) %>%
+          relocate(all_of(colnames(tmp.df)), .before = `Timestamp`) %>%
+          relocate(`Maximum S Liq`, .before = `Lamina Position`)
+      }
+
+      export.ls[[i]] <- data.df
     }
-
-    # LIQUID
-    {
-      # Only keep the first 13 thermcouples
-      tmp.df <- tmp.ls[[2]][, c(2:14)]
-
-      # Change names from simple numeric labels
-      setnames(tmp.df, new = paste0("S Liq Pair ", colnames(tmp.df)))
-
-      # Find the maximum S for each row
-      tmp.df$`Maximum S Liq` <- apply(tmp.df, 1, max)
-
-      # Merge
-      data.df <- cbind(data.df, tmp.df) %>%
-        relocate(all_of(colnames(tmp.df)), .before = `Timestamp`) %>%
-        relocate(`Maximum S Liq`, .before = `Lamina Position`)
-    }
-
-    return(data.df)
-  })
+  }
 
   # -------------------------------------------------------------------------- #
   ##### SECTION: Export Level 2 Data #####
 
   {
-    for (i in 1:length(dataSPIN.ls)){
+    for (i in 1:length(export.ls)){
 
       # Extract loop element
-      export.df <- dataSPIN.ls[[i]]
+      export.df <- export.ls[[i]]
 
       # Select spin.dates from loop
       date.c <- first(unique(as.Date(export.df$`Local Time`)))
@@ -320,6 +361,7 @@
     }
 
     # Backup data from current run for testing
-    saveRDS(dataSPIN.ls, file = paste0(export.data, "TMP.RDS"))
+    saveRDS(export.ls, file = paste0(export.data, "TMP.RDS"))
   }
 }
+

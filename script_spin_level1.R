@@ -42,7 +42,7 @@
   font.family = "Helvetica"
 
   # Set working directory
-  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/Purdue IEPOX/")
+  setwd("/Users/christopherrapp/Library/CloudStorage/Box-Box/AFRICAN DUST/")
   work.dir <- getwd()
 
   #' @import
@@ -89,13 +89,12 @@ PLOT.ON = T
 {
   {
     # Set threshold for size total
-    THRESHOLD.Dp.um <- 2.5
+    THRESHOLD.Dp.um <- 5
     data.export.ls <- NULL
     model.export.ls <- NULL
     for (n in 1:length(spin.dates)){
 
       # n = 31 for dust control
-
       {
         # Code Timing
         pct <- proc.time()
@@ -454,15 +453,20 @@ PLOT.ON = T
                       dust = T
                     }
 
-                    if (date.c %in% c("2026-02-26") && (i %in% c(4,5))){
+                    if (date.c %in% c("2026-02-26")){
                       dust = T
-                      THRESHOLD.Dp.um <- 5
+                      THRESHOLD.Dp.um = 5
+                    }
+
+                    if (date.c >= c("2026-03-03")){
+                      dust = T
+                      THRESHOLD.Dp.um = 5
                     }
 
                     if (dust){
 
                       data.ls[[i]] <- spin.classifier(data = tmp.ls[[i]],
-                                                      c.logsize.aerosol = 0.20,
+                                                      c.logsize.aerosol = 0.325, #0.2 prior
                                                       c.logsize.droplet = 0.16,
                                                       c.logsize.ice = 0.325,
                                                       c.depolarization.aerosol = 0.325,
@@ -558,7 +562,7 @@ PLOT.ON = T
       }
 
       # # Testing
-      # z = 1
+      # z = 2
       #
       # data <- tmp.ls[[z]]
       #
@@ -1208,12 +1212,3 @@ PLOT.ON = T
     }
   }
 }
-
-lamina.ls <- lamina.correction(export.df, thermocouples = c("C3", "C4", "C7", "C8", "C9", "C10", "C11", "C12", "C13", "C14"))
-
-tmp.df$`Lamina S Ice` <- as.numeric(lamina.ls$SS.ice)
-
-plot(diff(export.df$`Lamina S Ice` - as.numeric(lamina.ls$SS.ice)))
-
-plot(export.df$`Lamina S Ice`, (export.df$`Total Size Ice`/200)*100)
-abline(h = 1)
